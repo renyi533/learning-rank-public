@@ -1,5 +1,5 @@
 import os
-import ipdb
+#import ipdb
 import time
 import models
 import random
@@ -11,36 +11,42 @@ import collections
 from toy_ndcg import ndcg
 from ranking_utils import calc_err
 from convert_data_to_np_features import *
+import math
 
 
 class RankNetTrainer:
     def __init__(self, n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
-                 test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features):
+                 test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, model_dir):
         self.train_query_ids = train_query_ids
-        self.train_relevance_labels = train_relevance_labels
+        labels_min = 0 #np.amin(train_relevance_labels)
+        self.train_relevance_labels = train_relevance_labels - labels_min
+
         self.train_features = train_features
-        self.train_unique_query_ids = np.unique(self.train_query_ids)
-        self.train_unique_query_ids_subset = [self.train_unique_query_ids[i] for i in range(0, 500)]
+        if train_query_ids is not None:
+            self.train_unique_query_ids = np.unique(self.train_query_ids)
 
         self.vali_query_ids = vali_query_ids
         self.vali_relevance_labels = vali_relevance_labels
         self.vali_features = vali_features
-        self.vali_unique_query_ids = np.unique(self.vali_query_ids)
-        self.vali_unique_query_ids_subset = [self.vali_unique_query_ids[i] for i in range(0, 500)]
+        if vali_query_ids is not None:
+            self.vali_unique_query_ids = np.unique(self.vali_query_ids)
 
         self.test_query_ids = test_query_ids
         self.test_relevance_labels = test_relevance_labels
         self.test_features = test_features
+        if test_query_ids is not None:
+            self.test_unique_query_ids = np.unique(self.test_query_ids)
+
+
         self.unique_ids = np.unique(train_query_ids)
         np.random.shuffle(self.unique_ids)
-        self.unique_ids_subset = [self.unique_ids[i] for i in range(0, 500)]
 
-        self.models_directory = os.path.join('..', 'models/ranknet/')
+        self.models_directory = model_dir
         if not os.path.exists(self.models_directory):
             os.makedirs(self.models_directory)
         self.n_hidden = n_hidden
         self.best_cost = float('inf')
-        self.best_ndcg = float('inf')
+        self.best_ndcg = 0.0
         self.all_costs = list()
         self.all_ndcg_scores = list()
         self.all_full_ndcg_scores = list()
@@ -50,8 +56,8 @@ class RankNetTrainer:
         self.all_validation_full_ndcg_scores = list()
         self.all_validation_err_scores = list()
 
-    def train(self, learning_rate, n_layers, batch_size, lambdarank, unfactorized, factorized):
-        x = tf.placeholder("float", [None, models.N_FEATURES])
+    def train(self, learning_rate, n_layers, lambdarank, factorized, n_features, epoch):
+        x = tf.placeholder("float", [None, n_features])
         relevance_scores = tf.placeholder("float", [None, 1])
         sorted_relevance_scores = tf.placeholder("float", [None, 1])
         index_range = tf.placeholder("float", [None, 1])
@@ -62,45 +68,68 @@ class RankNetTrainer:
         if lambdarank:
             self.filename = 'nn_lambdarank_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.lambdarank_deep(x, relevance_scores, sorted_relevance_scores, index_range,
-                                                        self.learning_rate, self.n_hidden, n_layers)
-        elif unfactorized:
+                                                        self.learning_rate, self.n_hidden, n_layers, n_features)
+        elif not factorized:
             self.filename = 'nn_unfactorized_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
-            cost, optimizer, score = models.default_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers)
+            cost, optimizer, score = models.default_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers, n_features)
         elif factorized:
             self.filename = 'nn_factorized_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
-            cost, optimizer, score = models.deep_factorized_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers)
+            cost, optimizer, score = models.deep_factorized_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers, n_features)
         else:
             raise('Need to specify if this model should be unfactorized, factorized, or use lambdarank!')
-
+        saver = tf.train.Saver(tf.global_variables(), max_to_keep = 5)
         with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            saver = tf.train.Saver()
+            sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
+            ckpt = tf.train.get_checkpoint_state(self.models_directory)
+            if ckpt and ckpt.model_checkpoint_path:
+                print(ckpt.model_checkpoint_path+". Will load saved model")
+                saver.restore(sess, ckpt.model_checkpoint_path) # restore all variables
+            else:
+                print('no valid saved model found')
             c_iter = 0
-            while True:
-                if c_iter % 10 == 0:
+            while c_iter<epoch:
+
+                #indices = np.random.randint(1, len(self.train_features), batch_size)
+                for index in range(len(self.unique_ids)):
+                    c_id = self.unique_ids[index]
+                    indices = np.where(self.train_query_ids == c_id)[0]
+
+                    if lambdarank:
+                        optimizer(sess, {
+                            x: np.array(self.train_features[indices], ndmin=2),
+                            relevance_scores: np.array(self.train_relevance_labels[indices], ndmin=2).T,
+                            lr: self.learning_rate,
+                            query_indices: indices,
+                            index_range: np.array([float(i) for i in range(0,len(indices))], ndmin=2).T,
+                            sorted_relevance_scores: np.sort(np.array(self.train_relevance_labels[indices], ndmin=2)).T[::-1]
+                        })
+                    else:
+                        optimizer(sess, {
+                            x: np.array(self.train_features[indices], ndmin=2),
+                            relevance_scores: np.array(self.train_relevance_labels[indices], ndmin=2).T,
+                            lr: self.learning_rate,
+                            query_indices: indices
+                        })
+                if c_iter % 1 == 0:
                     self.check_progress(sess, saver, cost, score, x, relevance_scores, c_iter, True)
                 c_iter += 1
-                indices = np.random.randint(1, len(self.train_features), batch_size)
-                # c_id = np.random.choice(self.unique_ids)
-                # indices = np.where(self.train_query_ids == c_id)[0]
-                if len(indices) > batch_size:
-                    indices = indices[:batch_size]
-                if lambdarank:
-                    optimizer(sess, {
-                        x: np.array(self.train_features[indices], ndmin=2),
-                        relevance_scores: np.array(self.train_relevance_labels[indices], ndmin=2).T,
-                        lr: self.learning_rate,
-                        query_indices: indices,
-                        index_range: np.array([float(i) for i in range(0,len(indices))], ndmin=2).T,
-                        sorted_relevance_scores: np.sort(np.array(self.train_relevance_labels[indices], ndmin=2)).T[::-1]
-                    })
-                else:
-                    optimizer(sess, {
-                        x: np.array(self.train_features[indices], ndmin=2),
-                        relevance_scores: np.array(self.train_relevance_labels[indices], ndmin=2).T,
-                        lr: self.learning_rate,
-                        query_indices: indices
-                    })
+            if self.test_features is not None:
+                test_avg_cost, test_avg_err, test_avg_ndcg, test_avg_full_ndcg = self.check_scores(cost,
+                  self.test_features,
+                  self.test_query_ids,
+                  self.test_relevance_labels,
+                  relevance_scores, score, sess,
+                  self.test_unique_query_ids, x)
+                print('Test Cost: {:10f} NDCG: {:9f} ({:9f}) ERR: {:9f}  {:9f} s'.format(
+                        test_avg_cost, test_avg_ndcg, test_avg_full_ndcg, test_avg_err, time.time() - self.start_time))
+                predictions = self.compute_predictions(self.test_features, self.test_relevance_labels, relevance_scores, score, sess, x)
+                filename = os.path.join(self.models_directory, 'pred.csv')
+                with open(filename, 'w') as f:
+                    for elem in predictions:
+                        f.write(str(elem[0])+'\n')
+
+
+
 
 
     def check_progress(self, sess, saver, cost, score, x, relevance_scores, c_iter, save_data=True):
@@ -109,13 +138,17 @@ class RankNetTrainer:
             self.train_query_ids,
             self.train_relevance_labels,
             relevance_scores, score, sess,
-            self.train_unique_query_ids_subset, x)
-        vali_avg_cost, vali_avg_err, vali_avg_ndcg, vali_avg_full_ndcg = self.check_scores(cost,
-            self.vali_features,
-            self.vali_query_ids,
-            self.vali_relevance_labels,
-            relevance_scores, score, sess,
-            self.vali_unique_query_ids_subset, x)
+            self.train_unique_query_ids, x)
+
+        if self.vali_features is not None:
+            vali_avg_cost, vali_avg_err, vali_avg_ndcg, vali_avg_full_ndcg = self.check_scores(cost,
+              self.vali_features,
+              self.vali_query_ids,
+              self.vali_relevance_labels,
+              relevance_scores, score, sess,
+              self.vali_unique_query_ids, x)
+        else:
+            vali_avg_cost = vali_avg_err = vali_avg_ndcg = vali_avg_full_ndcg = float('nan')
         print('{} -- Train Cost: {:10f} NDCG: {:9f} ({:9f}) ERR: {:9f}  -- Validation Cost: {:10f} NDCG: {:9f} ({:9f}) ERR: {:9f} -- {:9f} s'.format(
             c_iter, train_avg_cost, train_avg_ndcg, train_avg_full_ndcg, train_avg_err, vali_avg_cost, vali_avg_ndcg, vali_avg_full_ndcg, vali_avg_err, time.time() - self.start_time))
         self.all_costs.append(train_avg_cost)
@@ -129,9 +162,9 @@ class RankNetTrainer:
         if self.all_validation_costs[-1] < self.best_cost:
             self.best_cost = self.all_validation_costs[-1]
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_validation_cost'))
-        if self.all_ndcg_scores[-1] < self.best_ndcg:
+        if self.all_ndcg_scores[-1] > self.best_ndcg:
             self.best_ndcg = self.all_ndcg_scores[-1]
-            saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_validation_ndcg'))
+            saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_train_ndcg'))
         if save_data:
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_most_recent'))
             pickle.dump(self.all_costs, open(os.path.join(self.models_directory, self.filename + '_costs.p'), 'wb'))
@@ -178,32 +211,44 @@ class RankNetTrainer:
         avg_err = np.mean(np.array(err_scores))
         return avg_cost, avg_err, avg_ndcg, avg_full_ndcg
 
+    def compute_predictions(self, features, relevance_labels, relevance_scores, score, sess, x):
+        predicted_score = score(sess, {
+            x: np.array(features, ndmin=2),
+            relevance_scores: np.array(relevance_labels, ndmin=2).T })
+        return predicted_score
+
+def load_files(data_dir):
+    if os.path.exists(data_dir):
+        relevance_labels = np.load(os.path.join(data_dir, LABEL_LIST + '.npy'))
+        query_ids = np.load(os.path.join(data_dir, QUERY_IDS + '.npy'))
+        features = np.load(os.path.join(data_dir, FEATURES + '.npy'))
+        return relevance_labels, query_ids, features
+    else:
+        return None, None, None
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--lr', type=float, help='learning rate')
-    parser.add_argument('--batch', type=int, help='batch size')
     parser.add_argument('--n_hidden', type=int, help='n hidden units')
     parser.add_argument('--n_layers', type=int, help='n layers')
     parser.add_argument('--lambdarank', action='store_true')
-    parser.add_argument('--unfactorized', action='store_true')
     parser.add_argument('--factorized', action='store_true')
+    parser.add_argument('--data_dir', type=str)
+    parser.add_argument('--model_dir', type=str)
+    parser.add_argument('--n_features', type=int)
+    parser.add_argument('--bn_mode', type=int)
+    parser.add_argument('--epoch', type=int)
     args = parser.parse_args()
 
-    np_train_file_directory = os.path.join('..', 'data/np_train_files')
-    train_relevance_labels = np.load(os.path.join(np_train_file_directory, LABEL_LIST + '.npy'))
-    train_query_ids = np.load(os.path.join(np_train_file_directory, QUERY_IDS + '.npy'))
-    train_features = np.load(os.path.join(np_train_file_directory, FEATURES + '.npy'))
+    np_train_file_directory = os.path.join(args.data_dir, 'np_train_files')
+    train_relevance_labels, train_query_ids, train_features  = load_files(np_train_file_directory)
 
-    np_test_file_directory = os.path.join('..', 'data/np_test_files')
-    test_relevance_labels = np.load(os.path.join(np_test_file_directory, LABEL_LIST + '.npy'))
-    test_query_ids = np.load(os.path.join(np_test_file_directory, QUERY_IDS + '.npy'))
-    test_features = np.load(os.path.join(np_test_file_directory, FEATURES + '.npy'))
+    np_test_file_directory = os.path.join(args.data_dir, 'np_test_files')
+    test_relevance_labels, test_query_ids, test_features  = load_files(np_test_file_directory)
 
-    np_vali_file_directory = os.path.join('..', 'data/np_vali_files')
-    vali_relevance_labels = np.load(os.path.join(np_vali_file_directory, LABEL_LIST + '.npy'))
-    vali_query_ids = np.load(os.path.join(np_vali_file_directory, QUERY_IDS + '.npy'))
-    vali_features = np.load(os.path.join(np_vali_file_directory, FEATURES + '.npy'))
+    np_vali_file_directory = os.path.join(args.data_dir, 'np_vali_files')
+    vali_relevance_labels, vali_query_ids, vali_features  = load_files(np_vali_file_directory)
 
     learning_rate = 1e-5 if args.lr is None else args.lr
     network_desc = 'unfactorized'
@@ -214,5 +259,5 @@ if __name__ == '__main__':
     print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s' % (network_desc, learning_rate, args.n_hidden, args.n_layers))
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
-                             test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features)
-    trainer.train(learning_rate, args.n_layers, args.batch,  args.lambdarank, args.unfactorized, args.factorized)
+                             test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir)
+    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.factorized, args.n_features, args.epoch)

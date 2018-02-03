@@ -6,7 +6,7 @@ def dcg(predicted_order):
     i = 1
     cumulative_dcg = 0
     for x in predicted_order:
-        cumulative_dcg += (2**x - 1)/(np.log(1+i))
+        cumulative_dcg += (x)/(np.log(1+i))
         i += 1
     return cumulative_dcg
 
@@ -14,11 +14,15 @@ def dcg(predicted_order):
 def ndcg(predicted_order, top_ten=True):
     sorted_list = np.sort(predicted_order)
     sorted_list = sorted_list[::-1]
-    our_dcg = dcg(predicted_order[:10]) if top_ten else dcg(predicted_order)
+    our_dcg = dcg(predicted_order[:500]) if top_ten else dcg(predicted_order)
     if our_dcg == 0:
       return 0
-    max_dcg = dcg(sorted_list[:10]) if top_ten else dcg(sorted_list)
-    ndcg_output = our_dcg/max_dcg
+    #print('our_dcg:%f' %(our_dcg))
+    max_dcg = dcg(sorted_list[:500]) if top_ten else dcg(sorted_list)
+    if max_dcg >0:
+        ndcg_output = our_dcg/max_dcg
+    else:
+        ndcg_output = 0
     return ndcg_output
 
 
