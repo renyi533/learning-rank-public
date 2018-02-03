@@ -10,7 +10,6 @@ import tensorflow as tf
 import collections
 from toy_ndcg import ndcg
 from ranking_utils import calc_err
-from convert_data_to_np_features import *
 import math
 
 
@@ -84,6 +83,7 @@ class RankNetTrainer:
             if ckpt and ckpt.model_checkpoint_path:
                 print(ckpt.model_checkpoint_path+". Will load saved model")
                 saver.restore(sess, ckpt.model_checkpoint_path) # restore all variables
+                epoch = 0
             else:
                 print('no valid saved model found')
             c_iter = 0
@@ -127,9 +127,6 @@ class RankNetTrainer:
                 with open(filename, 'w') as f:
                     for elem in predictions:
                         f.write(str(elem[0])+'\n')
-
-
-
 
 
     def check_progress(self, sess, saver, cost, score, x, relevance_scores, c_iter, save_data=True):
@@ -226,6 +223,39 @@ def load_files(data_dir):
     else:
         return None, None, None
 
+def read_libsvm_data(filename):
+    start_time = time.time()
+    label_list = list()
+    features = list()
+    current_row = 0
+    print('start loading data: '+filename)
+    with open(filename, 'r') as f:
+        for line in f:
+            q2 = line.split(" ")
+            label_list.append(q2[0])
+            del q2[0]
+            d = ':'.join(map(str, q2))
+            e = d.split(":")
+            features.append(e[1::2])
+            if current_row % 10000 == 0:
+                print('row %d - %f seconds' % (current_row, time.time() - start_time))
+                #print('label:'+str(label_list[current_row]))
+                #print('features:'+str(features[current_row]))
+            current_row += 1
+
+    print('Done loading data: %s - %f seconds' % (filename, time.time() - start_time))
+
+    label_list = np.asarray(label_list, dtype=float)
+    features = np.asarray(features, dtype=float)
+    query_ids = np.asarray(features[:, 0], dtype=int)
+    features = features[:, 1:]
+    return label_list, query_ids, features
+
+def read_data(data_dir):
+    if data_dir is not None and os.path.exists(data_dir):
+        return read_libsvm_data(data_dir)
+    else:
+        return None, None, None
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
@@ -234,21 +264,18 @@ if __name__ == '__main__':
     parser.add_argument('--n_layers', type=int, help='n layers')
     parser.add_argument('--lambdarank', action='store_true')
     parser.add_argument('--factorized', action='store_true')
-    parser.add_argument('--data_dir', type=str)
     parser.add_argument('--model_dir', type=str)
+    parser.add_argument('--train_data', type=str)
+    parser.add_argument('--test_data', type=str)
+    parser.add_argument('--validation_data', type=str)
     parser.add_argument('--n_features', type=int)
-    parser.add_argument('--bn_mode', type=int)
     parser.add_argument('--epoch', type=int)
     args = parser.parse_args()
 
-    np_train_file_directory = os.path.join(args.data_dir, 'np_train_files')
-    train_relevance_labels, train_query_ids, train_features  = load_files(np_train_file_directory)
 
-    np_test_file_directory = os.path.join(args.data_dir, 'np_test_files')
-    test_relevance_labels, test_query_ids, test_features  = load_files(np_test_file_directory)
-
-    np_vali_file_directory = os.path.join(args.data_dir, 'np_vali_files')
-    vali_relevance_labels, vali_query_ids, vali_features  = load_files(np_vali_file_directory)
+    train_relevance_labels, train_query_ids, train_features = read_data(args.train_data)
+    test_relevance_labels, test_query_ids, test_features = read_data(args.test_data)
+    vali_relevance_labels, vali_query_ids, vali_features = read_data(args.validation_data)
 
     learning_rate = 1e-5 if args.lr is None else args.lr
     network_desc = 'unfactorized'

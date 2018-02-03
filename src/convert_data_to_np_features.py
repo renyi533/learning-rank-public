@@ -12,6 +12,7 @@ def read_libsvm_data(filename):
     label_list = list()
     features = list()
     current_row = 0
+    print('start loading data: '+filename)
     with open(filename, 'r') as f:
         for line in f:
             q2 = line.split(" ")
