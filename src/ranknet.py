@@ -55,7 +55,7 @@ class RankNetTrainer:
         self.all_validation_full_ndcg_scores = list()
         self.all_validation_err_scores = list()
 
-    def train(self, learning_rate, n_layers, lambdarank, factorized, n_features, epoch, enable_bn):
+    def train(self, learning_rate, n_layers, lambdarank, factorized, n_features, epoch, enable_bn, L2):
         x = tf.placeholder("float", [None, n_features])
         relevance_scores = tf.placeholder("float", [None, 1])
         sorted_relevance_scores = tf.placeholder("float", [None, 1])
@@ -67,10 +67,10 @@ class RankNetTrainer:
         if lambdarank:
             self.filename = 'nn_lambdarank_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.default_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
-                                                        self.learning_rate, self.n_hidden, n_layers, n_features, enable_bn)
+                                                        self.learning_rate, self.n_hidden, n_layers, n_features, enable_bn, L2)
         elif not factorized:
             self.filename = 'nn_unfactorized_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
-            cost, optimizer, score = models.default_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers, n_features, enable_bn)
+            cost, optimizer, score = models.default_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers, n_features, enable_bn, L2)
         elif factorized:
             self.filename = 'nn_factorized_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.deep_factorized_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers, n_features, enable_bn)
@@ -86,6 +86,14 @@ class RankNetTrainer:
                 epoch = 0
             else:
                 print('no valid saved model found')
+
+            print("Trainable variables are:")
+            for v in tf.trainable_variables():
+              print("parameter:", v.name, "device:", v.device, "shape:", v.get_shape())
+            print("Global variables are:")
+            for v in tf.global_variables():
+              print("parameter:", v.name, "device:", v.device, "shape:", v.get_shape())
+
             c_iter = 0
             while c_iter<epoch:
 
@@ -263,11 +271,12 @@ def read_data(data_dir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--lr', type=float, help='learning rate', default=0.001)
+    parser.add_argument('--L2', type=float, help='weight decay', default=0.00)
     parser.add_argument('--n_hidden', type=int, help='n hidden units', default=50)
     parser.add_argument('--n_layers', type=int, help='n layers', default=1)
-    parser.add_argument('--lambdarank', action='store_true')
-    parser.add_argument('--factorized', action='store_true')
-    parser.add_argument('--enable_bn', action='store_true')
+    parser.add_argument('--lambdarank', action='store_true', default=False)
+    parser.add_argument('--factorized', action='store_true', default=False)
+    parser.add_argument('--enable_bn', action='store_true', default=False)
     parser.add_argument('--model_dir', type=str, default='model')
     parser.add_argument('--train_data', type=str)
     parser.add_argument('--test_data', type=str)
@@ -292,4 +301,4 @@ if __name__ == '__main__':
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir)
-    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.factorized, args.n_features, args.epoch, enable_bn)
+    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.factorized, args.n_features, args.epoch, enable_bn, args.L2)

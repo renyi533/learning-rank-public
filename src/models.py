@@ -5,8 +5,17 @@ import numpy as np
 
 N_FEATURES = 136
 
+def L2_loss(L2):
+    loss = 0
+    if L2 <= 0:
+        return loss
 
-def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_features, enable_bn):
+    for v in tf.trainable_variables():
+        loss = loss + tf.reduce_sum(tf.multiply(v, v))
+    return loss * L2
+
+
+def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
@@ -21,7 +30,8 @@ def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_fe
                 variables.append(tf.Variable(tf.zeros([n_hidden])))
         variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=math.sqrt(2 / (n_hidden)))))
         variables.append(tf.Variable(0, dtype=tf.float32))
-        print('Building an UNFACTORIZED (default) neural network with the following layer parameters [W_1, b_1, ..., W_n, b_n]')
+        print('Building an default ranknet neural network. learning_rate:%f, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%f'
+                % (learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2) )
         print(variables)
         return variables
 
@@ -46,6 +56,8 @@ def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_fe
     cost = tf.reduce_mean(
         (tf.ones([n_data, n_data]) - tf.diag(tf.ones([n_data]))) * tf.nn.sigmoid_cross_entropy_with_logits(
             logits=pairwise_predicted_scores, labels=real_scores))
+
+    cost = cost + L2_loss(L2)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
@@ -58,7 +70,7 @@ def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_fe
 
     return cost, run_optimizer, get_score
 
-def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn):
+def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
@@ -73,7 +85,8 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
                 variables.append(tf.Variable(tf.zeros([n_hidden])))
         variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=math.sqrt(2 / (n_hidden)))))
         variables.append(tf.Variable(0, dtype=tf.float32))
-        print('Building an default lambdaRank neural network with the following layer parameters [W_1, b_1, ..., W_n, b_n]')
+        print('Building an default lambdaRank neural network. learning_rate:%f, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%f'
+                % (learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2) )
         print(variables)
         return variables
 
@@ -113,6 +126,7 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
     cost = tf.reduce_mean(
         (swapped_ndcg) * tf.nn.sigmoid_cross_entropy_with_logits(
             logits=pairwise_predicted_scores, labels=real_scores))
+    cost = cost + L2_loss(L2)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
