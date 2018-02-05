@@ -9,7 +9,7 @@ import argparse
 import tensorflow as tf
 import collections
 from toy_ndcg import ndcg
-from ranking_utils import calc_err
+#from ranking_utils import calc_err
 import math
 
 
@@ -74,11 +74,11 @@ class RankNetTrainer:
         self.learning_rate = learning_rate
         self.start_time = time.time()
         opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=self.beta1, beta2=self.beta2, epsilon=self.epsilon)
-        print('Adam parameters: learning_rate:%f, beta1:%f, beta2:%f, epsilon:%g' %(self.learning_rate, self.beta1, self.beta2, self.epsilon))
+        print('Adam parameters: learning_rate:%g, beta1:%g, beta2:%g, epsilon:%g' %(self.learning_rate, self.beta1, self.beta2, self.epsilon))
         if lambdarank:
             self.filename = 'nn_lambdarank_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.default_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
-                                                               learning_rate, self.n_hidden, n_layers, n_features, enable_bn, L2, opt)
+                                                               learning_rate, self.n_hidden, n_layers, n_features, enable_bn, L2, self.ndcg_top, opt)
         elif not factorized:
             self.filename = 'nn_unfactorized_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.default_ranknet(x, relevance_scores, learning_rate, self.n_hidden, n_layers, n_features, enable_bn, L2, opt)
@@ -246,7 +246,8 @@ class RankNetTrainer:
             full_ndcg_scores.append(ndcg(relevance_labels[sorted_query_indices], top_count=None))
             if sample_dict is not None:
                 sample_dict[c_id] = sorted_query_indices
-            err_scores.append(calc_err(relevance_labels[scored_pred_query['query_int']]))
+            #err_scores.append(calc_err(relevance_labels[scored_pred_query['query_int']]))
+            err_scores.append(0.0)
         avg_cost = sum(costs) / len(costs)
         avg_ndcg = np.mean(np.array(ndcg_scores))
         avg_full_ndcg = np.mean(np.array(full_ndcg_scores))
@@ -282,7 +283,7 @@ def read_libsvm_data(filename):
             d = ':'.join(map(str, q2))
             e = d.split(":")
             features.append(e[1::2])
-            if current_row % 10000 == 0:
+            if current_row % 100000 == 0:
                 print('row %d - %f seconds' % (current_row, time.time() - start_time))
                 #print('label:'+str(label_list[current_row]))
                 #print('features:'+str(features[current_row]))
@@ -335,7 +336,7 @@ if __name__ == '__main__':
       network_desc = 'factorized'
     elif args.lambdarank:
       network_desc = 'lambdarank'
-    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s' % (network_desc, learning_rate, args.n_hidden, args.n_layers))
+    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s' % (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top))
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,

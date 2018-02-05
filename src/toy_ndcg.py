@@ -2,14 +2,19 @@ import numpy as np
 
 #predicted_order = [4, 4, 2, 3, 2, 4, 0, 1, 1, 4, 1, 3, 3, 2, 3, 4,2, 1, 0, 0]
 
-def dcg(predicted_order):
+def naive_dcg(predicted_order):
     i = 1
     cumulative_dcg = 0
     for x in predicted_order:
-        cumulative_dcg += (x)/(np.log(1+i))
+        cumulative_dcg += (x)/(np.log2(1+i))
         i += 1
     return cumulative_dcg
 
+def dcg(predicted_order):
+    index = np.array([float(i) for i in range(0,len(predicted_order))])
+    discount = np.log2(index+2)
+    discounted_result = predicted_order/discount
+    return np.sum(discounted_result)
 
 def ndcg(predicted_order, top_count=None):
     sorted_list = np.sort(predicted_order)

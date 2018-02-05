@@ -30,7 +30,7 @@ def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_fe
                 variables.append(tf.Variable(tf.zeros([n_hidden])))
         variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=0.01)))
         variables.append(tf.Variable(0, dtype=tf.float32))
-        print('Building an default ranknet neural network. learning_rate:%f, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%f'
+        print('Building an default ranknet neural network. learning_rate:%g, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%g'
                 % (learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2) )
         print(variables)
         return variables
@@ -70,7 +70,26 @@ def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_fe
 
     return cost, run_optimizer, get_score
 
-def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2, opt):
+def strim_tensor(x, count, axis=0):
+    length = tf.shape(x)[axis]
+    return tf.cond(length > count, lambda: tf.split(x, [count, length-count], axis=axis)[0], lambda: x)
+
+
+def _square_mask_tail_area(square, count):
+    length = tf.shape(square)[0]
+    top, bottom = tf.split(square, [count, length-count], axis=0)
+
+    left, right = tf.split(bottom, [count, length-count], axis=1)
+
+    bottom = tf.concat([left, tf.zeros([length-count, length-count])], axis=1)
+    return tf.concat([top, bottom], axis=0)
+
+def square_mask_tail_area(square, count):
+    length = tf.shape(square)[0]
+
+    return tf.cond(length <= count, lambda: square, lambda: _square_mask_tail_area(square, count))
+
+def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2, ndcg_top, opt):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
@@ -85,7 +104,7 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
                 variables.append(tf.Variable(tf.zeros([n_hidden])))
         variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=0.01)))
         variables.append(tf.Variable(0, dtype=tf.float32))
-        print('Building an default lambdaRank neural network. learning_rate:%f, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%f'
+        print('Building an default lambdaRank neural network. learning_rate:%g, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%g'
                 % (learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2) )
         print(variables)
         return variables
@@ -110,8 +129,9 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
 
     log_2 = tf.log(tf.constant(2.0, dtype=tf.float32))
     cg_discount = tf.log(index_range+2)/log_2
-    dcg = tf.reduce_sum( (relevance_labels) / cg_discount )
-    idcg = tf.reduce_sum( (sorted_relevance_labels) / cg_discount )
+    dcg = tf.reduce_sum( strim_tensor( (relevance_labels) / cg_discount , ndcg_top, axis=0) )
+    idcg = tf.reduce_sum( strim_tensor(  ( (sorted_relevance_labels) / cg_discount ), ndcg_top, axis=0 ) )
+    idcg = tf.abs(idcg)
     ndcg = dcg / idcg
     # remove the gain from label i then add the gain from label j
     stale_ij = tf.tile(((relevance_labels) / cg_discount), [1,n_data])
@@ -122,7 +142,7 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
     # remove the stale CG term for j, and then add the new CG term for j
     new_ndcg = (dcg - stale_ij + new_ij - stale_ji + new_ji) / idcg
     swapped_ndcg = tf.abs(ndcg - new_ndcg)
-
+    swapped_ndcg = tf.stop_gradient( square_mask_tail_area(swapped_ndcg, ndcg_top) )
     cost = tf.reduce_mean(
         (swapped_ndcg) * tf.nn.sigmoid_cross_entropy_with_logits(
             logits=pairwise_predicted_scores, labels=real_scores))
