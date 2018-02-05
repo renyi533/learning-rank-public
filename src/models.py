@@ -15,20 +15,20 @@ def L2_loss(L2):
     return loss * L2
 
 
-def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2):
+def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2, opt):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
     n_data = tf.shape(x)[0]
 
     def build_vars():
-        variables = [tf.Variable(tf.random_normal([N_FEATURES, n_hidden], stddev=math.sqrt(2 / (N_FEATURES)))),
+        variables = [tf.Variable(tf.random_normal([N_FEATURES, n_hidden], stddev=0.01)),
             tf.Variable(tf.zeros([n_hidden]))]
         if n_layers > 1:
             for i in range(n_layers-1):
-                variables.append(tf.Variable(tf.random_normal([n_hidden, n_hidden], stddev=math.sqrt(2 / (n_hidden)))))
+                variables.append(tf.Variable(tf.random_normal([n_hidden, n_hidden], stddev=0.01)))
                 variables.append(tf.Variable(tf.zeros([n_hidden])))
-        variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=math.sqrt(2 / (n_hidden)))))
+        variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=0.01)))
         variables.append(tf.Variable(0, dtype=tf.float32))
         print('Building an default ranknet neural network. learning_rate:%f, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%f'
                 % (learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2) )
@@ -60,7 +60,7 @@ def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_fe
     cost = cost + L2_loss(L2)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+        optimizer = opt.minimize(cost)
 
     def get_score(sess, feed_dict):
         return sess.run(predicted_scores, feed_dict=feed_dict)
@@ -70,20 +70,20 @@ def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_fe
 
     return cost, run_optimizer, get_score
 
-def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2):
+def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2, opt):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
     n_data = tf.shape(x)[0]
 
     def build_vars():
-        variables = [tf.Variable(tf.random_normal([N_FEATURES, n_hidden], stddev=math.sqrt(2 / (N_FEATURES)))),
+        variables = [tf.Variable(tf.random_normal([N_FEATURES, n_hidden], stddev=0.01)),
             tf.Variable(tf.zeros([n_hidden]))]
         if n_layers > 1:
             for i in range(n_layers-1):
-                variables.append(tf.Variable(tf.random_normal([n_hidden, n_hidden], stddev=math.sqrt(2 / (n_hidden)))))
+                variables.append(tf.Variable(tf.random_normal([n_hidden, n_hidden], stddev=0.01)))
                 variables.append(tf.Variable(tf.zeros([n_hidden])))
-        variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=math.sqrt(2 / (n_hidden)))))
+        variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=0.01)))
         variables.append(tf.Variable(0, dtype=tf.float32))
         print('Building an default lambdaRank neural network. learning_rate:%f, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%f'
                 % (learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2) )
@@ -129,7 +129,7 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
     cost = cost + L2_loss(L2)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+        optimizer = opt.minimize(cost)
 
     def get_score(sess, feed_dict):
         return sess.run(predicted_scores, feed_dict=feed_dict)

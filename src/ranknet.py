@@ -15,7 +15,8 @@ import math
 
 class RankNetTrainer:
     def __init__(self, n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
-                 test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, model_dir):
+                 test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, model_dir, ndcg_top,
+                 beta1, beta2, epsilon):
         self.train_query_ids = train_query_ids
         labels_min = 0 #np.amin(train_relevance_labels)
         self.train_relevance_labels = train_relevance_labels - labels_min
@@ -37,10 +38,18 @@ class RankNetTrainer:
             self.test_unique_query_ids = np.unique(self.test_query_ids)
 
 
-        self.unique_ids = np.unique(train_query_ids)
+        self.unique_ids = self.train_unique_query_ids
         np.random.shuffle(self.unique_ids)
 
+        self.ndcg_top = ndcg_top
         self.models_directory = model_dir
+
+        self.train_sample_dict = { }
+        self.vali_sample_dict = { }
+
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
         if not os.path.exists(self.models_directory):
             os.makedirs(self.models_directory)
         self.n_hidden = n_hidden
@@ -64,13 +73,15 @@ class RankNetTrainer:
         query_indices = tf.placeholder("float", [None])
         self.learning_rate = learning_rate
         self.start_time = time.time()
+        opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=self.beta1, beta2=self.beta2, epsilon=self.epsilon)
+        print('Adam parameters: learning_rate:%f, beta1:%f, beta2:%f, epsilon:%g' %(self.learning_rate, self.beta1, self.beta2, self.epsilon))
         if lambdarank:
             self.filename = 'nn_lambdarank_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.default_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
-                                                        self.learning_rate, self.n_hidden, n_layers, n_features, enable_bn, L2)
+                                                               learning_rate, self.n_hidden, n_layers, n_features, enable_bn, L2, opt)
         elif not factorized:
             self.filename = 'nn_unfactorized_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
-            cost, optimizer, score = models.default_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers, n_features, enable_bn, L2)
+            cost, optimizer, score = models.default_ranknet(x, relevance_scores, learning_rate, self.n_hidden, n_layers, n_features, enable_bn, L2, opt)
         elif factorized:
             self.filename = 'nn_factorized_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.deep_factorized_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers, n_features, enable_bn)
@@ -87,6 +98,20 @@ class RankNetTrainer:
             else:
                 print('no valid saved model found')
 
+            if self.train_features is None:
+                print('no training data provided. quit training')
+                epoch = 0
+
+            if epoch > 0:
+                for c_id in self.unique_ids:
+                    indices = np.where(self.train_query_ids == c_id)[0]
+                    self.train_sample_dict[c_id] = indices
+
+                if self.vali_features is not None:
+                    for c_id in self.vali_unique_query_ids:
+                        indices = np.where(self.vali_query_ids == c_id)[0]
+                        self.vali_sample_dict[c_id] = indices
+
             print("Trainable variables are:")
             for v in tf.trainable_variables():
               print("parameter:", v.name, "device:", v.device, "shape:", v.get_shape())
@@ -97,24 +122,27 @@ class RankNetTrainer:
             c_iter = 0
             while c_iter<epoch:
 
+                np.random.shuffle(self.unique_ids)
                 #indices = np.random.randint(1, len(self.train_features), batch_size)
                 for index in range(len(self.unique_ids)):
                     c_id = self.unique_ids[index]
-                    indices = np.where(self.train_query_ids == c_id)[0]
+                    orig_indices = self.train_sample_dict[c_id]
+                    curr_train_features = self.train_features[orig_indices]
+                    curr_train_labels = self.train_relevance_labels[orig_indices]
 
                     if lambdarank:
                         optimizer(sess, {
-                            x: np.array(self.train_features[indices], ndmin=2),
-                            relevance_scores: np.array(self.train_relevance_labels[indices], ndmin=2).T,
+                            x: np.array(curr_train_features, ndmin=2),
+                            relevance_scores: np.array(curr_train_labels, ndmin=2).T,
                             lr: self.learning_rate,
                             query_indices: indices,
-                            index_range: np.array([float(i) for i in range(0,len(indices))], ndmin=2).T,
-                            sorted_relevance_scores: np.sort(np.array(self.train_relevance_labels[indices], ndmin=2)).T[::-1]
+                            index_range: np.array([float(i) for i in range(0,len(curr_train_labels))], ndmin=2).T,
+                            sorted_relevance_scores: np.sort(np.array(curr_train_labels, ndmin=2)).T[::-1]
                         })
                     else:
                         optimizer(sess, {
-                            x: np.array(self.train_features[indices], ndmin=2),
-                            relevance_scores: np.array(self.train_relevance_labels[indices], ndmin=2).T,
+                            x: np.array(curr_train_features, ndmin=2),
+                            relevance_scores: np.array(curr_train_labels, ndmin=2).T,
                             lr: self.learning_rate,
                             query_indices: indices
                         })
@@ -143,7 +171,7 @@ class RankNetTrainer:
             self.train_query_ids,
             self.train_relevance_labels,
             relevance_scores, score, sess,
-            self.train_unique_query_ids, x, index_range, sorted_relevance_scores)
+            self.train_unique_query_ids, x, index_range, sorted_relevance_scores, self.train_sample_dict)
 
         if self.vali_features is not None:
             vali_avg_cost, vali_avg_err, vali_avg_ndcg, vali_avg_full_ndcg = self.check_scores(cost,
@@ -151,7 +179,7 @@ class RankNetTrainer:
               self.vali_query_ids,
               self.vali_relevance_labels,
               relevance_scores, score, sess,
-              self.vali_unique_query_ids, x, index_range, sorted_relevance_scores)
+              self.vali_unique_query_ids, x, index_range, sorted_relevance_scores, self.vali_sample_dict)
         else:
             vali_avg_cost = vali_avg_err = vali_avg_ndcg = vali_avg_full_ndcg = float('nan')
         print('{} -- Train Cost: {:10f} NDCG: {:9f} ({:9f}) ERR: {:9f}  -- Validation Cost: {:10f} NDCG: {:9f} ({:9f}) ERR: {:9f} -- {:9f} s'.format(
@@ -184,14 +212,17 @@ class RankNetTrainer:
 
 
     def check_scores(self, cost, features, query_ids, relevance_labels, relevance_scores, score, sess,
-                     unique_query_ids, x, index_range, sorted_relevance_scores):
+                     unique_query_ids, x, index_range, sorted_relevance_scores, sample_dict=None):
         costs = list()
         ndcg_scores = list()
         full_ndcg_scores = list()
         err_scores = list()
         assert len(unique_query_ids) > 0
         for c_id in unique_query_ids:
-            query_indices = np.where(query_ids == c_id)[0]
+            if sample_dict is not None:
+                query_indices = sample_dict[c_id]
+            else:
+                query_indices = np.where(query_ids == c_id)[0]
             c_cost = sess.run(cost, feed_dict={
                 x: np.array(features[query_indices], ndmin=2),
                 relevance_scores: np.array(relevance_labels[query_indices], ndmin=2).T,
@@ -210,8 +241,11 @@ class RankNetTrainer:
             scored_pred_query = np.sort(pred_query, order='predicted_scores')[::-1]
 
             costs.append(c_cost)
-            ndcg_scores.append(ndcg(relevance_labels[scored_pred_query['query_int']]))
-            full_ndcg_scores.append(ndcg(relevance_labels[scored_pred_query['query_int']], top_ten=False))
+            sorted_query_indices = scored_pred_query['query_int']
+            ndcg_scores.append(ndcg(relevance_labels[sorted_query_indices], top_count=self.ndcg_top))
+            full_ndcg_scores.append(ndcg(relevance_labels[sorted_query_indices], top_count=None))
+            if sample_dict is not None:
+                sample_dict[c_id] = sorted_query_indices
             err_scores.append(calc_err(relevance_labels[scored_pred_query['query_int']]))
         avg_cost = sum(costs) / len(costs)
         avg_ndcg = np.mean(np.array(ndcg_scores))
@@ -272,6 +306,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--lr', type=float, help='learning rate', default=0.001)
     parser.add_argument('--L2', type=float, help='weight decay', default=0.00)
+    parser.add_argument('--beta1', type=float, help='weight decay', default=0.9)
+    parser.add_argument('--beta2', type=float, help='weight decay', default=0.999)
+    parser.add_argument('--epsilon', type=float, help='weight decay', default=1e-8)
     parser.add_argument('--n_hidden', type=int, help='n hidden units', default=50)
     parser.add_argument('--n_layers', type=int, help='n layers', default=1)
     parser.add_argument('--lambdarank', action='store_true', default=False)
@@ -283,6 +320,7 @@ if __name__ == '__main__':
     parser.add_argument('--validation_data', type=str)
     parser.add_argument('--n_features', type=int, default=59)
     parser.add_argument('--epoch', type=int, default=100)
+    parser.add_argument('--ndcg_top', type=int, default=1500)
     args = parser.parse_args()
 
 
@@ -300,5 +338,6 @@ if __name__ == '__main__':
     print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s' % (network_desc, learning_rate, args.n_hidden, args.n_layers))
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
-                             test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir)
+                             test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,
+                             args.beta1, args.beta2, args.epsilon)
     trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.factorized, args.n_features, args.epoch, enable_bn, args.L2)

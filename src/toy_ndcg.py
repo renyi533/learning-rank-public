@@ -11,14 +11,14 @@ def dcg(predicted_order):
     return cumulative_dcg
 
 
-def ndcg(predicted_order, top_ten=True):
+def ndcg(predicted_order, top_count=None):
     sorted_list = np.sort(predicted_order)
     sorted_list = sorted_list[::-1]
-    our_dcg = dcg(predicted_order[:500]) if top_ten else dcg(predicted_order)
+    our_dcg = dcg(predicted_order[:top_count]) if top_count is not None else dcg(predicted_order)
     if our_dcg == 0:
       return 0
     #print('our_dcg:%f' %(our_dcg))
-    max_dcg = dcg(sorted_list[:500]) if top_ten else dcg(sorted_list)
+    max_dcg = dcg(sorted_list[:top_count]) if top_count is not None else dcg(sorted_list)
     if max_dcg >0:
         ndcg_output = our_dcg/max_dcg
     else:
