@@ -9,6 +9,7 @@ import argparse
 import tensorflow as tf
 import collections
 from toy_ndcg import ndcg
+from toy_ndcg import normalize
 #from ranking_utils import calc_err
 import math
 
@@ -64,7 +65,7 @@ class RankNetTrainer:
         self.all_validation_full_ndcg_scores = list()
         self.all_validation_err_scores = list()
 
-    def train(self, learning_rate, n_layers, lambdarank, factorized, n_features, epoch, enable_bn, L2):
+    def train(self, learning_rate, n_layers, lambdarank, factorized, n_features, epoch, enable_bn, L2, normalize_label):
         x = tf.placeholder("float", [None, n_features])
         relevance_scores = tf.placeholder("float", [None, 1])
         sorted_relevance_scores = tf.placeholder("float", [None, 1])
@@ -106,11 +107,21 @@ class RankNetTrainer:
                 for c_id in self.unique_ids:
                     indices = np.where(self.train_query_ids == c_id)[0]
                     self.train_sample_dict[c_id] = indices
+                    if normalize_label > 0:
+                        normalize(self.train_relevance_labels, indices, self.ndcg_top)
 
                 if self.vali_features is not None:
                     for c_id in self.vali_unique_query_ids:
                         indices = np.where(self.vali_query_ids == c_id)[0]
                         self.vali_sample_dict[c_id] = indices
+                        if normalize_label > 0:
+                            normalize(self.vali_relevance_labels, indices, self.ndcg_top)
+
+            if self.test_features is not None:
+                for c_id in self.test_unique_query_ids:
+                    indices = np.where(self.test_query_ids == c_id)[0]
+                    if normalize_label > 0:
+                        normalize(self.test_relevance_labels, indices, self.ndcg_top)
 
             print("Trainable variables are:")
             for v in tf.trainable_variables():
@@ -315,6 +326,7 @@ if __name__ == '__main__':
     parser.add_argument('--lambdarank', action='store_true', default=False)
     parser.add_argument('--factorized', action='store_true', default=False)
     parser.add_argument('--enable_bn', action='store_true', default=False)
+    parser.add_argument('--normalize_label', type=int, default=1)
     parser.add_argument('--model_dir', type=str, default='model')
     parser.add_argument('--train_data', type=str)
     parser.add_argument('--test_data', type=str)
@@ -336,9 +348,10 @@ if __name__ == '__main__':
       network_desc = 'factorized'
     elif args.lambdarank:
       network_desc = 'lambdarank'
-    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s' % (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top))
+    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s, normalize_label:%s' %
+            (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label))
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,
                              args.beta1, args.beta2, args.epsilon)
-    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.factorized, args.n_features, args.epoch, enable_bn, args.L2)
+    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.factorized, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label)

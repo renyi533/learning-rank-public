@@ -30,6 +30,24 @@ def ndcg(predicted_order, top_count=None):
         ndcg_output = 0
     return ndcg_output
 
+def normalize(array, indices, top_count=None):
+    labels = array[indices]
+    sorted_list = np.sort(labels)
+    sorted_list = sorted_list[::-1]
+
+    length = len(sorted_list)
+    if top_count is None or top_count > length:
+        pivot = -1
+    else:
+        pivot = top_count-1
+
+    labels = labels - sorted_list[pivot]
+
+    for i in range(len(indices)):
+        array[indices[i]] = array[indices[i]] - sorted_list[pivot]
+
+    return labels
+
 
 def ndcg_lambdarank(predicted_order):
     sorted_list = np.sort(predicted_order)
