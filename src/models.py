@@ -71,6 +71,9 @@ def default_ranknet(x, relevance_labels, learning_rate, n_hidden, n_layers, n_fe
     return cost, run_optimizer, get_score
 
 def strim_tensor(x, count, axis=0):
+    if count<=0:
+        return x
+
     length = tf.shape(x)[axis]
     return tf.cond(length > count, lambda: tf.split(x, [count, length-count], axis=axis)[0], lambda: x)
 
@@ -85,6 +88,9 @@ def _square_mask_tail_area(square, count):
     return tf.concat([top, bottom], axis=0)
 
 def square_mask_tail_area(square, count):
+    if count<=0:
+        return square
+
     length = tf.shape(square)[0]
 
     return tf.cond(length <= count, lambda: square, lambda: _square_mask_tail_area(square, count))
