@@ -19,8 +19,7 @@ class RankNetTrainer:
                  test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, model_dir, ndcg_top,
                  beta1, beta2, epsilon):
         self.train_query_ids = train_query_ids
-        labels_min = 0 #np.amin(train_relevance_labels)
-        self.train_relevance_labels = train_relevance_labels - labels_min
+        self.train_relevance_labels = train_relevance_labels
 
         self.train_features = train_features
         if train_query_ids is not None:

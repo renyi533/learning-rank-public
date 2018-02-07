@@ -137,8 +137,8 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
     cg_discount = tf.log(index_range+2)/log_2
     dcg = tf.reduce_sum( strim_tensor( (relevance_labels) / cg_discount , ndcg_top, axis=0) )
     idcg = tf.reduce_sum( strim_tensor(  ( (sorted_relevance_labels) / cg_discount ), ndcg_top, axis=0 ) )
-    idcg = tf.abs(idcg) + 1e-8
-    ndcg = tf.cond(idcg > 1e-8, lambda: dcg / idcg, lambda: 0.0)
+    abs_idcg = tf.abs(idcg) + 1e-8
+    ndcg = tf.cond(idcg > 0, lambda: dcg / abs_idcg, lambda: 0.0)
     # remove the gain from label i then add the gain from label j
     stale_ij = tf.tile(((relevance_labels) / cg_discount), [1,n_data])
     new_ij = ((relevance_labels) / tf.transpose(cg_discount))
@@ -146,8 +146,8 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
     new_ji = (tf.transpose(relevance_labels) / cg_discount)
     # if we swap i and j, we want to remove the stale CG term for i, add the new CG term for i,
     # remove the stale CG term for j, and then add the new CG term for j
-    new_ndcg = (dcg - stale_ij + new_ij - stale_ji + new_ji) / idcg
-    swapped_ndcg = tf.cond(idcg > 1e-8, lambda: tf.abs(ndcg - new_ndcg), lambda: new_ndcg-new_ndcg)
+    new_ndcg = (dcg - stale_ij + new_ij - stale_ji + new_ji) / abs_idcg
+    swapped_ndcg = tf.cond(idcg > 0, lambda: tf.abs(ndcg - new_ndcg), lambda: new_ndcg-new_ndcg)
     if ndcg_top>0:
         swapped_ndcg = square_mask_tail_area(swapped_ndcg, ndcg_top)
     cost = tf.reduce_mean(

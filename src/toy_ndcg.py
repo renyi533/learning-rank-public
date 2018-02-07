@@ -28,6 +28,10 @@ def ndcg(predicted_order, top_count=None):
         ndcg_output = our_dcg/max_dcg
     else:
         ndcg_output = 0
+        
+    if ndcg_output < -1:
+        ndcg_output = -1
+        
     return ndcg_output
 
 def normalize(array, indices, top_count=None):
