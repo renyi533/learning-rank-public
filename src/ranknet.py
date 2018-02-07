@@ -37,7 +37,6 @@ class RankNetTrainer:
         if test_query_ids is not None:
             self.test_unique_query_ids = np.unique(self.test_query_ids)
 
-
         self.unique_ids = self.train_unique_query_ids
         np.random.shuffle(self.unique_ids)
 
@@ -108,20 +107,20 @@ class RankNetTrainer:
                     indices = np.where(self.train_query_ids == c_id)[0]
                     self.train_sample_dict[c_id] = indices
                     if normalize_label > 0:
-                        normalize(self.train_relevance_labels, indices, self.ndcg_top)
+                        normalize(self.train_relevance_labels, indices, None)
 
                 if self.vali_features is not None:
                     for c_id in self.vali_unique_query_ids:
                         indices = np.where(self.vali_query_ids == c_id)[0]
                         self.vali_sample_dict[c_id] = indices
                         if normalize_label > 0:
-                            normalize(self.vali_relevance_labels, indices, self.ndcg_top)
+                            normalize(self.vali_relevance_labels, indices, None)
 
             if self.test_features is not None:
                 for c_id in self.test_unique_query_ids:
                     indices = np.where(self.test_query_ids == c_id)[0]
                     if normalize_label > 0:
-                        normalize(self.test_relevance_labels, indices, self.ndcg_top)
+                        normalize(self.test_relevance_labels, indices, None)
 
             print("Trainable variables are:")
             for v in tf.trainable_variables():

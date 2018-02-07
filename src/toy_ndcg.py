@@ -28,10 +28,10 @@ def ndcg(predicted_order, top_count=None):
         ndcg_output = our_dcg/max_dcg
     else:
         ndcg_output = 0
-        
+
     if ndcg_output < -1:
         ndcg_output = -1
-        
+
     return ndcg_output
 
 def normalize(array, indices, top_count=None):
@@ -40,8 +40,8 @@ def normalize(array, indices, top_count=None):
     sorted_list = sorted_list[::-1]
 
     length = len(sorted_list)
-    if top_count is None or top_count > length:
-        pivot = -1
+    if top_count is None or top_count > length/2:
+        pivot = int(length/2)
     else:
         pivot = top_count-1
 
