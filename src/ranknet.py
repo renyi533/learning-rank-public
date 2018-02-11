@@ -160,7 +160,7 @@ class RankNetTrainer:
                     self.check_progress(sess, saver, cost, score, x, relevance_scores, c_iter,index_range, sorted_relevance_scores, True)
                 c_iter += 1
             if self.test_features is not None:
-                test_avg_cost, test_avg_err, test_avg_ndcg, test_avg_full_ndcg = self.check_scores(cost,
+                test_avg_cost, test_avg_err, test_avg_ndcg, test_avg_full_ndcg, predictions = self.check_scores(cost,
                   self.test_features,
                   self.test_query_ids,
                   self.test_relevance_labels,
@@ -168,15 +168,15 @@ class RankNetTrainer:
                   self.test_unique_query_ids, x, index_range, sorted_relevance_scores)
                 print('Test Cost: {:10f} NDCG: {:9f} ({:9f}) ERR: {:9f}  {:9f} s'.format(
                         test_avg_cost, test_avg_ndcg, test_avg_full_ndcg, test_avg_err, time.time() - self.start_time))
-                predictions = self.compute_predictions(self.test_features, self.test_relevance_labels, relevance_scores, score, sess, x)
+                #predictions = self.compute_predictions(self.test_features, self.test_relevance_labels, relevance_scores, score, sess, x)
                 filename = os.path.join(self.models_directory, 'pred.csv')
                 with open(filename, 'w') as f:
                     for elem in predictions:
-                        f.write(str(elem[0])+'\n')
+                        f.write(str(float(elem[0]))+'\n')
 
 
     def check_progress(self, sess, saver, cost, score, x, relevance_scores, c_iter, index_range, sorted_relevance_scores, save_data=True):
-        train_avg_cost, train_avg_err, train_avg_ndcg, train_avg_full_ndcg = self.check_scores(cost,
+        train_avg_cost, train_avg_err, train_avg_ndcg, train_avg_full_ndcg , _ = self.check_scores(cost,
             self.train_features,
             self.train_query_ids,
             self.train_relevance_labels,
@@ -184,7 +184,7 @@ class RankNetTrainer:
             self.train_unique_query_ids, x, index_range, sorted_relevance_scores, self.train_sample_dict)
 
         if self.vali_features is not None:
-            vali_avg_cost, vali_avg_err, vali_avg_ndcg, vali_avg_full_ndcg = self.check_scores(cost,
+            vali_avg_cost, vali_avg_err, vali_avg_ndcg, vali_avg_full_ndcg, _ = self.check_scores(cost,
               self.vali_features,
               self.vali_query_ids,
               self.vali_relevance_labels,
@@ -228,11 +228,14 @@ class RankNetTrainer:
         full_ndcg_scores = list()
         err_scores = list()
         assert len(unique_query_ids) > 0
+        aggregated_pred_score = [[float(0.0)]] * len(query_ids)
+        aggregated_pred_score = np.array(aggregated_pred_score)
         for c_id in unique_query_ids:
             if sample_dict is not None:
                 query_indices = sample_dict[c_id]
             else:
                 query_indices = np.where(query_ids == c_id)[0]
+
             c_cost = sess.run(cost, feed_dict={
                 x: np.array(features[query_indices], ndmin=2),
                 relevance_scores: np.array(relevance_labels[query_indices], ndmin=2).T,
@@ -242,6 +245,7 @@ class RankNetTrainer:
             predicted_score = score(sess, {
                 x: np.array(features[query_indices], ndmin=2),
                 relevance_scores: np.array(relevance_labels[query_indices], ndmin=2).T })
+            aggregated_pred_score[query_indices] = predicted_score
             pred_query_type = np.dtype(
                 [('predicted_scores', predicted_score.dtype),
                  ('query_int', query_indices.dtype)])
@@ -262,7 +266,7 @@ class RankNetTrainer:
         avg_ndcg = np.mean(np.array(ndcg_scores))
         avg_full_ndcg = np.mean(np.array(full_ndcg_scores))
         avg_err = np.mean(np.array(err_scores))
-        return avg_cost, avg_err, avg_ndcg, avg_full_ndcg
+        return avg_cost, avg_err, avg_ndcg, avg_full_ndcg, aggregated_pred_score
 
     def compute_predictions(self, features, relevance_labels, relevance_scores, score, sess, x):
         predicted_score = score(sess, {
