@@ -17,7 +17,7 @@ import math
 class RankNetTrainer:
     def __init__(self, n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                  test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, model_dir, ndcg_top,
-                 beta1, beta2, epsilon):
+                 beta1, beta2, epsilon, step_cnt):
         self.train_query_ids = train_query_ids
         self.train_relevance_labels = train_relevance_labels
 
@@ -62,6 +62,7 @@ class RankNetTrainer:
         self.all_validation_ndcg_scores = list()
         self.all_validation_full_ndcg_scores = list()
         self.all_validation_err_scores = list()
+        self.step_cnt = step_cnt
 
     def train(self, learning_rate, n_layers, lambdarank, factorized, n_features, epoch, enable_bn, L2, normalize_label, trim_tail_loss):
         x = tf.placeholder("float", [None, n_features])
@@ -74,7 +75,18 @@ class RankNetTrainer:
         self.start_time = time.time()
         opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=self.beta1, beta2=self.beta2, epsilon=self.epsilon)
         print('Adam parameters: learning_rate:%g, beta1:%g, beta2:%g, epsilon:%g' %(self.learning_rate, self.beta1, self.beta2, self.epsilon))
-        if lambdarank:
+
+        if self.step_cnt is not None:
+            if lambdarank:
+                name = 'lambdarank'
+            else:
+                name = 'ranknet'
+            trim_threshold = self.ndcg_top if trim_tail_loss else -1
+            self.filename = 'nn_%s_%slayers_%shidden_lr%s_step%s' % (name, n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'), self.step_cnt)
+            cost, optimizer, score = models.rnn_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
+                                                               learning_rate, self.n_hidden, n_layers, n_features, enable_bn, self.step_cnt, L2, trim_threshold, lambdarank, opt)
+
+        elif lambdarank:
             trim_threshold = self.ndcg_top if trim_tail_loss else -1
             self.filename = 'nn_lambdarank_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.default_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
@@ -338,6 +350,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_features', type=int, default=59)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--ndcg_top', type=int, default=1500)
+    parser.add_argument('--step_cnt', type=int, default=None)
     args = parser.parse_args()
 
 
@@ -357,5 +370,5 @@ if __name__ == '__main__':
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,
-                             args.beta1, args.beta2, args.epsilon)
+                             args.beta1, args.beta2, args.epsilon, args.step_cnt)
     trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.factorized, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss)
