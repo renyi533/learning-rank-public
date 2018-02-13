@@ -167,7 +167,7 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
 
     return cost, run_optimizer, get_score
 
-def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, step_cnt, L2, ndcg_top, lambdarank, opt):
+def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, step_cnt, L2, ndcg_top, lambdarank, rnn_type, opt):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
@@ -180,8 +180,8 @@ def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, le
 
     def build_vars():
 
-        print('Building an rnn %s neural network. learning_rate:%g, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%g, step_cnt:%d, trim_threshold:%d'
-                % (name, learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2, step_cnt, ndcg_top) )
+        print('Building an rnn %s neural network. learning_rate:%g, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%g, step_cnt:%d, trim_threshold:%d, rnn_type:%d'
+                % (name, learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2, step_cnt, ndcg_top, rnn_type) )
         return None
 
     def score(x):
@@ -194,7 +194,12 @@ def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, le
         b = tf.get_variable("bias", [1], initializer=init_func)
         W = tf.get_variable("weights", [n_hidden, 1], initializer=init_func)
 
-        rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LayerNormBasicLSTMCell(n_hidden, dropout_keep_prob=1.0, layer_norm=enable_bn)  for i in range(n_layers)], state_is_tuple=True)
+        rnn_cell = None
+        if rnn_type == 0:
+            rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LayerNormBasicLSTMCell(n_hidden, dropout_keep_prob=1.0, layer_norm=enable_bn)  for i in range(n_layers)], state_is_tuple=True)
+        else:
+            rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.BasicRNNCell(n_hidden)  for i in range(n_layers)], state_is_tuple=True)
+            
         #data = tf.to_float(features)
         data = tf.transpose(features, [1,0,2])
         data = tf.reshape(data, [-1, n_features])
