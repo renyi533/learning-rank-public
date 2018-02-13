@@ -115,20 +115,19 @@ class RankNetTrainer:
             if self.train_features is None:
                 print('no training data provided. quit training')
                 epoch = 0
-
-            if epoch > 0:
+            else:
                 for c_id in self.unique_ids:
                     indices = np.where(self.train_query_ids == c_id)[0]
                     self.train_sample_dict[c_id] = indices
                     if normalize_label > 0:
                         normalize(self.train_relevance_labels, indices, None)
 
-                if self.vali_features is not None:
-                    for c_id in self.vali_unique_query_ids:
-                        indices = np.where(self.vali_query_ids == c_id)[0]
-                        self.vali_sample_dict[c_id] = indices
-                        if normalize_label > 0:
-                            normalize(self.vali_relevance_labels, indices, None)
+            if self.vali_features is not None:
+                for c_id in self.vali_unique_query_ids:
+                    indices = np.where(self.vali_query_ids == c_id)[0]
+                    self.vali_sample_dict[c_id] = indices
+                    if normalize_label > 0:
+                        normalize(self.vali_relevance_labels, indices, None)
 
             if self.test_features is not None:
                 for c_id in self.test_unique_query_ids:
@@ -144,9 +143,9 @@ class RankNetTrainer:
               print("parameter:", v.name, "device:", v.device, "shape:", v.get_shape())
 
             c_iter = 0
-            self.check_progress(sess, saver, cost, score, x, relevance_scores, c_iter,index_range, sorted_relevance_scores, False)
+            if self.train_features is not None:
+                self.check_progress(sess, saver, cost, score, x, relevance_scores, c_iter,index_range, sorted_relevance_scores, False)
             while c_iter<epoch:
-
                 np.random.shuffle(self.unique_ids)
                 #indices = np.random.randint(1, len(self.train_features), batch_size)
                 for index in range(len(self.unique_ids)):
