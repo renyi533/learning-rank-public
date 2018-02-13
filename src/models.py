@@ -5,7 +5,7 @@ import numpy as np
 import time
 
 N_FEATURES = 136
-
+#export CUDA_VISIBLE_DEVICES=0
 def L2_loss(L2):
     loss = 0
     if L2 <= 0:
@@ -133,20 +133,20 @@ def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, le
         return None
 
     def score(x):
-      with tf.variable_scope("rnn"):
-        seed_time = int(time.time())
-        init_func = tf.contrib.layers.xavier_initializer(uniform=True, seed=seed_time, dtype=tf.float32)
+      with tf.variable_scope("rnn", initializer=tf.random_normal_initializer(mean=0.0, stddev=0.01)):
+        #seed_time = int(time.time())
+        #init_func = tf.contrib.layers.xavier_initializer(uniform=True, seed=seed_time, dtype=tf.float32)
 
         features = tf.reshape(x, [-1, step_cnt, n_features])
 
-        b = tf.get_variable("bias", [1], initializer=init_func)
-        W = tf.get_variable("weights", [n_hidden, 1], initializer=init_func)
+        b = tf.get_variable("bias", [1])
+        W = tf.get_variable("weights", [n_hidden, 1])
 
         rnn_cell = None
         if rnn_type == 0:
-            rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LayerNormBasicLSTMCell(n_hidden, dropout_keep_prob=1.0, layer_norm=enable_bn)  for i in range(n_layers)], state_is_tuple=True)
+            rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LayerNormBasicLSTMCell(n_hidden, dropout_keep_prob=1.0, layer_norm=enable_bn, activation=tf.nn.relu)  for i in range(n_layers)], state_is_tuple=True)
         else:
-            rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.BasicRNNCell(n_hidden)  for i in range(n_layers)], state_is_tuple=True)
+            rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.BasicRNNCell(n_hidden, activation=tf.nn.relu)  for i in range(n_layers)], state_is_tuple=True)
 
         #data = tf.to_float(features)
         data = tf.transpose(features, [1,0,2])
