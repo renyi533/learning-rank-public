@@ -54,6 +54,7 @@ class RankNetTrainer:
         self.n_hidden = n_hidden
         self.best_cost = float('inf')
         self.best_ndcg = 0.0
+        self.vali_best_ndcg = 0.0
         self.all_costs = list()
         self.all_ndcg_scores = list()
         self.all_full_ndcg_scores = list()
@@ -221,10 +222,10 @@ class RankNetTrainer:
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_train_ndcg'))
             print('save checkpoint for best train ndcg:%g' % (self.best_ndcg))
             
-        if self.all_validation_costs[-1] < self.best_cost:
-            self.best_cost = self.all_validation_costs[-1]
-            saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_validation_cost'))
-            print('save checkpoint for best validation cost:%g' % (self.best_cost))
+        if self.all_validation_ndcg_scores[-1] > self.vali_best_ndcg:
+            self.vali_best_ndcg = self.all_validation_ndcg_scores[-1]
+            saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_validation_ndcg'))
+            print('save checkpoint for best validation ndcg:%g' % (self.vali_best_ndcg))
             
         if save_data:
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_most_recent'))
