@@ -216,13 +216,13 @@ class RankNetTrainer:
         self.all_validation_full_ndcg_scores.append(vali_avg_full_ndcg)
         self.all_validation_ndcg_scores.append(vali_avg_ndcg)
         self.all_validation_err_scores.append(vali_avg_err)
-
-        if self.all_ndcg_scores[-1] > self.best_ndcg:
+        if self.vali_query_ids is None:
+          if self.all_ndcg_scores[-1] > self.best_ndcg:
             self.best_ndcg = self.all_ndcg_scores[-1]
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_train_ndcg'))
             print('save checkpoint for best train ndcg:%g' % (self.best_ndcg))
-            
-        if self.all_validation_ndcg_scores[-1] > self.vali_best_ndcg:
+        else:    
+          if self.all_validation_ndcg_scores[-1] > self.vali_best_ndcg:
             self.vali_best_ndcg = self.all_validation_ndcg_scores[-1]
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_validation_ndcg'))
             print('save checkpoint for best validation ndcg:%g' % (self.vali_best_ndcg))
