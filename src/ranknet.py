@@ -64,12 +64,12 @@ class RankNetTrainer:
         self.all_validation_err_scores = list()
         self.step_cnt = step_cnt
 
-    def train(self, learning_rate, n_layers, lambdarank, factorized, n_features, epoch, enable_bn, L2, normalize_label, trim_tail_loss, rnn_type, enable_rnn):
+    def train(self, learning_rate, n_layers, lambdarank, n_features, epoch, enable_bn, L2, normalize_label, trim_tail_loss, rnn_type, enable_rnn):
         if self.step_cnt is None:
             mult = 1
         else:
             mult = self.step_cnt
-            
+
         x = tf.placeholder("float", [None, n_features*mult])
         relevance_scores = tf.placeholder("float", [None, 1])
         sorted_relevance_scores = tf.placeholder("float", [None, 1])
@@ -81,29 +81,25 @@ class RankNetTrainer:
         opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=self.beta1, beta2=self.beta2, epsilon=self.epsilon)
         print('Adam parameters: learning_rate:%g, beta1:%g, beta2:%g, epsilon:%g' %(self.learning_rate, self.beta1, self.beta2, self.epsilon))
 
+        trim_threshold = self.ndcg_top if trim_tail_loss else -1
         if enable_rnn:
             if lambdarank:
                 name = 'lambdarank'
             else:
                 name = 'ranknet'
-            trim_threshold = self.ndcg_top if trim_tail_loss else -1
-            self.filename = 'nn_%s_%slayers_%shidden_lr%s_step%s' % (name, n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'), self.step_cnt)
+            self.filename = 'rnn_%s_%slayers_%shidden_lr%s_step%s' % (name, n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'), self.step_cnt)
             cost, optimizer, score = models.rnn_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
                                                                learning_rate, self.n_hidden, n_layers, n_features, enable_bn, self.step_cnt, L2, trim_threshold, lambdarank, rnn_type, opt)
 
         elif lambdarank:
-            trim_threshold = self.ndcg_top if trim_tail_loss else -1
             self.filename = 'nn_lambdarank_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.default_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
-                                                               learning_rate, self.n_hidden, n_layers, n_features*mult, enable_bn, L2, trim_threshold, opt)
-        elif not factorized:
-            self.filename = 'nn_unfactorized_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
-            cost, optimizer, score = models.default_ranknet(x, relevance_scores, learning_rate, self.n_hidden, n_layers, n_features*mult, enable_bn, L2, opt)
-        elif factorized:
-            self.filename = 'nn_factorized_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
-            cost, optimizer, score = models.deep_factorized_ranknet(x, relevance_scores, self.learning_rate, self.n_hidden, n_layers, n_features*mult, enable_bn)
+                                                               learning_rate, self.n_hidden, n_layers, n_features*mult, enable_bn, L2, trim_threshold, True, opt)
         else:
-            raise('Need to specify if this model should be unfactorized, factorized, or use lambdarank!')
+            self.filename = 'nn_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
+            cost, optimizer, score = models.default_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
+                                                               learning_rate, self.n_hidden, n_layers, n_features*mult, enable_bn, L2, trim_threshold, False, opt)
+
         saver = tf.train.Saver(tf.global_variables(), max_to_keep = 5)
         with tf.Session() as sess:
             sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
@@ -344,7 +340,6 @@ if __name__ == '__main__':
     parser.add_argument('--n_hidden', type=int, help='n hidden units', default=50)
     parser.add_argument('--n_layers', type=int, help='n layers', default=1)
     parser.add_argument('--lambdarank', action='store_true', default=False)
-    parser.add_argument('--factorized', action='store_true', default=False)
     parser.add_argument('--enable_bn', action='store_true', default=False)
     parser.add_argument('--trim_tail_loss', action='store_true', default=False)
     parser.add_argument('--enable_rnn', action='store_true', default=False)
@@ -367,10 +362,9 @@ if __name__ == '__main__':
 
     learning_rate = 1e-5 if args.lr is None else args.lr
     enable_bn = False if args.enable_bn is None else args.enable_bn
-    network_desc = 'unfactorized'
-    if args.factorized:
-      network_desc = 'factorized'
-    elif args.lambdarank:
+    network_desc = 'ranknet'
+
+    if args.lambdarank:
       network_desc = 'lambdarank'
     print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s, normalize_label:%s, trim_tail_loss:%s ' %
             (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label, args.trim_tail_loss))
@@ -378,4 +372,4 @@ if __name__ == '__main__':
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,
                              args.beta1, args.beta2, args.epsilon, args.step_cnt)
-    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.factorized, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss, args.rnn_type, args.enable_rnn)
+    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss, args.rnn_type, args.enable_rnn)
