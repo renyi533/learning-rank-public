@@ -170,7 +170,7 @@ class RankNetTrainer:
                             query_indices: indices
                         })
                 if c_iter % 1 == 0:
-                    self.check_progress(sess, saver, cost, score, x, relevance_scores, c_iter,index_range, sorted_relevance_scores, True)
+                    self.check_progress(sess, saver, cost, score, x, relevance_scores, c_iter,index_range, sorted_relevance_scores, False)
                 c_iter += 1
             if self.test_features is not None:
                 test_avg_cost, test_avg_err, test_avg_ndcg, test_avg_full_ndcg, predictions = self.check_scores(cost,
@@ -188,7 +188,7 @@ class RankNetTrainer:
                         f.write(str(float(elem[0]))+'\n')
 
 
-    def check_progress(self, sess, saver, cost, score, x, relevance_scores, c_iter, index_range, sorted_relevance_scores, save_data=True):
+    def check_progress(self, sess, saver, cost, score, x, relevance_scores, c_iter, index_range, sorted_relevance_scores, save_data=False):
         train_avg_cost, train_avg_err, train_avg_ndcg, train_avg_full_ndcg , _ = self.check_scores(cost,
             self.train_features,
             self.train_query_ids,
@@ -215,12 +215,17 @@ class RankNetTrainer:
         self.all_validation_full_ndcg_scores.append(vali_avg_full_ndcg)
         self.all_validation_ndcg_scores.append(vali_avg_ndcg)
         self.all_validation_err_scores.append(vali_avg_err)
-        if self.all_validation_costs[-1] < self.best_cost:
-            self.best_cost = self.all_validation_costs[-1]
-            saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_validation_cost'))
+
         if self.all_ndcg_scores[-1] > self.best_ndcg:
             self.best_ndcg = self.all_ndcg_scores[-1]
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_train_ndcg'))
+            print('save checkpoint for best train ndcg:%g' % (self.best_ndcg))
+            
+        if self.all_validation_costs[-1] < self.best_cost:
+            self.best_cost = self.all_validation_costs[-1]
+            saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_validation_cost'))
+            print('save checkpoint for best validation cost:%g' % (self.best_cost))
+            
         if save_data:
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_most_recent'))
             pickle.dump(self.all_costs, open(os.path.join(self.models_directory, self.filename + '_costs.p'), 'wb'))
