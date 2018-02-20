@@ -17,10 +17,10 @@ import math
 class RankNetTrainer:
     def __init__(self, n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                  test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, model_dir, ndcg_top,
-                 beta1, beta2, epsilon, step_cnt):
+                 beta1, beta2, epsilon, step_cnt, max_allowed_drop):
         self.train_query_ids = train_query_ids
         self.train_relevance_labels = train_relevance_labels
-
+        self.max_allowed_drop = max_allowed_drop
         self.train_features = train_features
         if train_query_ids is not None:
             self.train_unique_query_ids = np.unique(self.train_query_ids)
@@ -65,6 +65,16 @@ class RankNetTrainer:
         self.all_validation_err_scores = list()
         self.step_cnt = step_cnt
 
+    def restore_checkpoint(self, sess, saver):
+        ckpt = tf.train.get_checkpoint_state(self.models_directory)
+        if ckpt and ckpt.model_checkpoint_path:
+            print(ckpt.model_checkpoint_path+". Will load saved model")
+            saver.restore(sess, ckpt.model_checkpoint_path) # restore all variables
+            return True
+        else:
+            print('no valid saved model found')
+            return False
+
     def train(self, learning_rate, n_layers, lambdarank, n_features, epoch, enable_bn, L2, normalize_label, trim_tail_loss, rnn_type, enable_rnn):
         if self.step_cnt is None:
             mult = 1
@@ -104,13 +114,9 @@ class RankNetTrainer:
         saver = tf.train.Saver(tf.global_variables(), max_to_keep = 5)
         with tf.Session() as sess:
             sess.run(tf.group(tf.global_variables_initializer(), tf.local_variables_initializer()))
-            ckpt = tf.train.get_checkpoint_state(self.models_directory)
-            if ckpt and ckpt.model_checkpoint_path:
-                print(ckpt.model_checkpoint_path+". Will load saved model")
-                saver.restore(sess, ckpt.model_checkpoint_path) # restore all variables
+            if self.restore_checkpoint(sess, saver):
+                print('no need training. set epoch to 0')
                 epoch = 0
-            else:
-                print('no valid saved model found')
 
             if self.train_features is None:
                 print('no training data provided. quit training')
@@ -221,12 +227,18 @@ class RankNetTrainer:
             self.best_ndcg = self.all_ndcg_scores[-1]
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_train_ndcg'))
             print('save checkpoint for best train ndcg:%g' % (self.best_ndcg))
-        else:    
+          elif self.all_ndcg_scores[-1] - self.best_ndcg < self.max_allowed_drop and save_data:
+            print('restore the best training result')
+            self.restore_checkpoint(sess, saver)
+        else:
           if self.all_validation_ndcg_scores[-1] > self.vali_best_ndcg and save_data:
             self.vali_best_ndcg = self.all_validation_ndcg_scores[-1]
             saver.save(sess, os.path.join(self.models_directory, self.filename + '_best_validation_ndcg'))
             print('save checkpoint for best validation ndcg:%g' % (self.vali_best_ndcg))
-            
+          elif self.all_validation_ndcg_scores[-1] - self.vali_best_ndcg < self.max_allowed_drop and save_data:
+            print('restore the best validation result')
+            self.restore_checkpoint(sess, saver)
+
         if save_data:
             #saver.save(sess, os.path.join(self.models_directory, self.filename + '_most_recent'))
             pickle.dump(self.all_costs, open(os.path.join(self.models_directory, self.filename + '_costs.p'), 'wb'))
@@ -343,6 +355,7 @@ if __name__ == '__main__':
     parser.add_argument('--beta1', type=float, help='weight decay', default=0.9)
     parser.add_argument('--beta2', type=float, help='weight decay', default=0.999)
     parser.add_argument('--epsilon', type=float, help='weight decay', default=1e-8)
+    parser.add_argument('--max_allowed_drop', type=float, help='max allowed ndcg drop', default=-float('inf'))
     parser.add_argument('--n_hidden', type=int, help='n hidden units', default=50)
     parser.add_argument('--n_layers', type=int, help='n layers', default=1)
     parser.add_argument('--lambdarank', action='store_true', default=False)
@@ -372,10 +385,10 @@ if __name__ == '__main__':
 
     if args.lambdarank:
       network_desc = 'lambdarank'
-    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s, normalize_label:%s, trim_tail_loss:%s ' %
-            (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label, args.trim_tail_loss))
+    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s, normalize_label:%s, trim_tail_loss:%s, max_allowed_drop:%g ' %
+            (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label, args.trim_tail_loss, args.max_allowed_drop))
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,
-                             args.beta1, args.beta2, args.epsilon, args.step_cnt)
+                             args.beta1, args.beta2, args.epsilon, args.step_cnt, args.max_allowed_drop)
     trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss, args.rnn_type, args.enable_rnn)
