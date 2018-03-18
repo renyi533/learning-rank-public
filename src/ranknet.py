@@ -75,7 +75,7 @@ class RankNetTrainer:
             print('no valid saved model found')
             return False
 
-    def train(self, learning_rate, n_layers, lambdarank, n_features, epoch, enable_bn, L2, normalize_label, trim_tail_loss, rnn_type, enable_rnn):
+    def train(self, learning_rate, n_layers, lambdarank, n_features, epoch, enable_bn, L2, normalize_label, trim_tail_loss, rnn_type, enable_rnn, optimizer_type):
         if self.step_cnt is None:
             mult = 1
         else:
@@ -89,7 +89,13 @@ class RankNetTrainer:
         query_indices = tf.placeholder("float", [None])
         self.learning_rate = learning_rate
         self.start_time = time.time()
-        opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=self.beta1, beta2=self.beta2, epsilon=self.epsilon)
+            
+        if optimizer_type == 0:
+            opt = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
+            print('use GradientDescentOptimizer')
+        else:
+            opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=self.beta1, beta2=self.beta2, epsilon=self.epsilon)
+            print('use AdamOptimizer')
         print('Adam parameters: learning_rate:%g, beta1:%g, beta2:%g, epsilon:%g' %(self.learning_rate, self.beta1, self.beta2, self.epsilon))
 
         trim_threshold = self.ndcg_top if trim_tail_loss else -1
@@ -372,6 +378,7 @@ if __name__ == '__main__':
     parser.add_argument('--ndcg_top', type=int, default=1500)
     parser.add_argument('--step_cnt', type=int, default=1)
     parser.add_argument('--rnn_type', type=int, default=0)
+    parser.add_argument('--optimizer_type', type=int, default=0)
     args = parser.parse_args()
 
 
@@ -391,4 +398,4 @@ if __name__ == '__main__':
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,
                              args.beta1, args.beta2, args.epsilon, args.step_cnt, args.max_allowed_drop)
-    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss, args.rnn_type, args.enable_rnn)
+    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss, args.rnn_type, args.enable_rnn, args.optimizer_type)
