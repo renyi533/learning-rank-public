@@ -40,7 +40,8 @@ def square_mask_tail_area(square, count):
 
     return tf.cond(length <= count, lambda: square, lambda: _square_mask_tail_area(square, count))
 
-def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2, ndcg_top, lambdarank, opt):
+def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate,
+        n_hidden, n_layers, n_features, enable_bn, L2, ndcg_top, lambdarank, opt, global_step):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
@@ -105,7 +106,7 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
     cost = cost + L2_loss(L2)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
-        optimizer = opt.minimize(cost)
+        optimizer = opt.minimize(cost, global_step=global_step)
 
     def get_score(sess, feed_dict):
         return sess.run(predicted_scores, feed_dict=feed_dict)
@@ -115,7 +116,8 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
 
     return cost, run_optimizer, get_score
 
-def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, step_cnt, L2, ndcg_top, lambdarank, rnn_type, opt):
+def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features,
+        enable_bn, step_cnt, L2, ndcg_top, lambdarank, rnn_type, opt, global_step):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
@@ -193,7 +195,7 @@ def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, le
     cost = cost + L2_loss(L2)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
-        optimizer = opt.minimize(cost)
+        optimizer = opt.minimize(cost, global_step=global_step)
 
     def get_score(sess, feed_dict):
         return sess.run(predicted_scores, feed_dict=feed_dict)
