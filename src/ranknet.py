@@ -137,20 +137,20 @@ class RankNetTrainer:
                     indices = np.where(self.train_query_ids == c_id)[0]
                     self.train_sample_dict[c_id] = indices
                     if normalize_label > 0:
-                        normalize(self.train_relevance_labels, indices, None)
+                        normalize(self.train_relevance_labels, indices, normalize_label, None)
 
             if self.vali_features is not None:
                 for c_id in self.vali_unique_query_ids:
                     indices = np.where(self.vali_query_ids == c_id)[0]
                     self.vali_sample_dict[c_id] = indices
                     if normalize_label > 0:
-                        normalize(self.vali_relevance_labels, indices, None)
+                        normalize(self.vali_relevance_labels, indices, normalize_label, None)
 
             if self.test_features is not None:
                 for c_id in self.test_unique_query_ids:
                     indices = np.where(self.test_query_ids == c_id)[0]
                     if normalize_label > 0:
-                        normalize(self.test_relevance_labels, indices, None)
+                        normalize(self.test_relevance_labels, indices, normalize_label, None)
 
             print("Trainable variables are:")
             for v in tf.trainable_variables():
