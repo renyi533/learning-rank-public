@@ -75,7 +75,7 @@ class RankNetTrainer:
             print('no valid saved model found')
             return False
 
-    def train(self, learning_rate, n_layers, lambdarank, n_features, epoch, enable_bn, L2, normalize_label, trim_tail_loss, rnn_type, enable_rnn, optimizer_type):
+    def train(self, learning_rate, n_layers, lambdarank, n_features, epoch, enable_bn, L2, normalize_label, trim_tail_loss, rnn_type, enable_rnn, optimizer_type, lambda_type):
         if self.step_cnt is None:
             mult = 1
         else:
@@ -167,12 +167,16 @@ class RankNetTrainer:
                     curr_train_labels = self.train_relevance_labels[orig_indices]
 
                     if lambdarank:
+                        if lambda_type == 0:
+                            index_range_arr = np.array([float(i) for i in range(0,len(curr_train_labels))], ndmin=2).T
+                        else:
+                            index_range_arr = np.array([float(0) for i in range(0,len(curr_train_labels))], ndmin=2).T
                         optimizer(sess, {
                             x: np.array(curr_train_features, ndmin=2),
                             relevance_scores: np.array(curr_train_labels, ndmin=2).T,
                             lr: self.learning_rate,
                             query_indices: indices,
-                            index_range: np.array([float(i) for i in range(0,len(curr_train_labels))], ndmin=2).T,
+                            index_range: index_range_arr,
                             sorted_relevance_scores: np.sort(np.array(curr_train_labels, ndmin=2)).T[::-1]
                         })
                     else:
@@ -379,6 +383,7 @@ if __name__ == '__main__':
     parser.add_argument('--step_cnt', type=int, default=1)
     parser.add_argument('--rnn_type', type=int, default=0)
     parser.add_argument('--optimizer_type', type=int, default=0)
+    parser.add_argument('--lambda_type', type=int, default=0)
     args = parser.parse_args()
 
 
@@ -392,10 +397,10 @@ if __name__ == '__main__':
 
     if args.lambdarank:
       network_desc = 'lambdarank'
-    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s, normalize_label:%s, trim_tail_loss:%s, max_allowed_drop:%g ' %
-            (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label, args.trim_tail_loss, args.max_allowed_drop))
+    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s, normalize_label:%s, trim_tail_loss:%s, max_allowed_drop:%g, lambda_type:%g ' %
+            (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label, args.trim_tail_loss, args.max_allowed_drop, arg.lambda_type))
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,
                              args.beta1, args.beta2, args.epsilon, args.step_cnt, args.max_allowed_drop)
-    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss, args.rnn_type, args.enable_rnn, args.optimizer_type)
+    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss, args.rnn_type, args.enable_rnn, args.optimizer_type, arg.lambda_type)
