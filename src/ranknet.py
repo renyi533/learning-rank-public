@@ -412,11 +412,11 @@ if __name__ == '__main__':
       network_desc = 'lambdarank'
 
     print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s, normalize_label:%s, trim_tail_loss:%s, max_allowed_drop:%g, lr_decay_steps:%d, lr_decay_rate:%g, keep_prob:%g, keep_prob_input:%g, init_std_dev:%g, loss_type:%d, lambda_type:%g' %
-            (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label, args.trim_tail_loss, args.max_allowed_drop, args.lr_decay_steps, args.lr_decay_rate, args.keep_prob, args.keep_prob_input, args.init_std_dev, args.loss_type, arg.lambda_type))
+            (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label, args.trim_tail_loss, args.max_allowed_drop, args.lr_decay_steps, args.lr_decay_rate, args.keep_prob, args.keep_prob_input, args.init_std_dev, args.loss_type, args.lambda_type))
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,
                              args.beta1, args.beta2, args.epsilon, args.step_cnt, args.max_allowed_drop)
 
     trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss,
-            args.rnn_type, args.enable_rnn, args.optimizer_type, args.lr_decay_steps, args.lr_decay_rate, args.keep_prob, args.keep_prob_input, args.init_std_dev, args.loss_type, arg.lambda_type)
+            args.rnn_type, args.enable_rnn, args.optimizer_type, args.lr_decay_steps, args.lr_decay_rate, args.keep_prob, args.keep_prob_input, args.init_std_dev, args.loss_type, args.lambda_type)
