@@ -34,23 +34,34 @@ def ndcg(predicted_order, top_count=None):
 
     return ndcg_output
 
-def normalize(array, indices, top_count=None):
+def normalize(array, indices, normalize_label=1, top_count=None):
     labels = array[indices]
-    sorted_list = np.sort(labels)
-    sorted_list = sorted_list[::-1]
 
-    length = len(sorted_list)
-    if top_count is None or top_count > length/2:
-        pivot = int(length/2)
-    else:
-        pivot = top_count-1
+    assert normalize_label >=0 and normalize_label <= 2, 'Unknown normalization type'
 
-    labels = labels - sorted_list[pivot]
+    if normalize_label == 1:
+        sorted_list = np.sort(labels)
+        sorted_list = sorted_list[::-1]
+        length = len(sorted_list)
 
-    for i in range(len(indices)):
-        array[indices[i]] = array[indices[i]] - sorted_list[pivot]
+        if top_count is None or top_count > length/2:
+            pivot = int(length/2)
+        else:
+            pivot = top_count-1
 
+        labels = labels - sorted_list[pivot]
+        #for i in range(len(indices)):
+        #    array[indices[i]] = array[indices[i]] - sorted_list[pivot]
+    elif normalize_label == 2:
+        mean = np.mean(labels)
+        std = np.std(labels)
+        labels = (labels - mean)/std
+        labels = np.maximum(labels, -3)
+        labels = np.minimum(labels, 3)
+
+    array[indices] = labels
     return labels
+
 
 
 def ndcg_lambdarank(predicted_order):

@@ -75,7 +75,9 @@ class RankNetTrainer:
             print('no valid saved model found')
             return False
 
-    def train(self, learning_rate, n_layers, lambdarank, n_features, epoch, enable_bn, L2, normalize_label, trim_tail_loss, rnn_type, enable_rnn, optimizer_type, lambda_type):
+    def train(self, learning_rate, n_layers, lambdarank, n_features, epoch, enable_bn, L2, normalize_label,
+            trim_tail_loss, rnn_type, enable_rnn, optimizer_type, lr_decay_steps, lr_decay_rate, keep_prob, keep_prob_input, init_std_dev, loss_type, lambda_type):
+
         if self.step_cnt is None:
             mult = 1
         else:
@@ -87,14 +89,17 @@ class RankNetTrainer:
         index_range = tf.placeholder("float", [None, 1], name='index_range')
         lr = tf.placeholder("float", [])
         query_indices = tf.placeholder("float", [None])
+        global_step = tf.Variable(0, trainable=False)
         self.learning_rate = learning_rate
+        decayed_learning_rate = tf.train.exponential_decay(learning_rate=learning_rate, global_step=global_step,
+                decay_steps=lr_decay_steps, decay_rate=lr_decay_rate)
         self.start_time = time.time()
-            
+
         if optimizer_type == 0:
-            opt = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
+            opt = tf.train.GradientDescentOptimizer(learning_rate=decayed_learning_rate)
             print('use GradientDescentOptimizer')
         else:
-            opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=self.beta1, beta2=self.beta2, epsilon=self.epsilon)
+            opt = tf.train.AdamOptimizer(learning_rate=decayed_learning_rate, beta1=self.beta1, beta2=self.beta2, epsilon=self.epsilon)
             print('use AdamOptimizer')
         print('Adam parameters: learning_rate:%g, beta1:%g, beta2:%g, epsilon:%g' %(self.learning_rate, self.beta1, self.beta2, self.epsilon))
 
@@ -106,16 +111,17 @@ class RankNetTrainer:
                 name = 'ranknet'
             self.filename = 'rnn_%s_%slayers_%shidden_lr%s_step%s' % (name, n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'), self.step_cnt)
             cost, optimizer, score = models.rnn_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
-                                                               learning_rate, self.n_hidden, n_layers, n_features, enable_bn, self.step_cnt, L2, trim_threshold, lambdarank, rnn_type, opt)
+                                                               learning_rate, self.n_hidden, n_layers, n_features, enable_bn, self.step_cnt, L2, trim_threshold,
+                                                               lambdarank, rnn_type, opt, global_step, keep_prob, keep_prob_input, init_std_dev, loss_type)
 
         elif lambdarank:
             self.filename = 'nn_lambdarank_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.default_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
-                                                               learning_rate, self.n_hidden, n_layers, n_features*mult, enable_bn, L2, trim_threshold, True, opt)
+                                                               learning_rate, self.n_hidden, n_layers, n_features*mult, enable_bn, L2, trim_threshold, True, opt, global_step, keep_prob, keep_prob_input, init_std_dev, loss_type)
         else:
             self.filename = 'nn_ranknet_%slayers_%shidden_lr%s' % (n_layers, self.n_hidden, ('%.0E' % self.learning_rate).replace('-', '_'))
             cost, optimizer, score = models.default_lambdarank(x, relevance_scores, sorted_relevance_scores, index_range,
-                                                               learning_rate, self.n_hidden, n_layers, n_features*mult, enable_bn, L2, trim_threshold, False, opt)
+                                                               learning_rate, self.n_hidden, n_layers, n_features*mult, enable_bn, L2, trim_threshold, False, opt, global_step, keep_prob, keep_prob_input, init_std_dev, loss_type)
 
         saver = tf.train.Saver(tf.global_variables(), max_to_keep = 5)
         with tf.Session() as sess:
@@ -132,20 +138,20 @@ class RankNetTrainer:
                     indices = np.where(self.train_query_ids == c_id)[0]
                     self.train_sample_dict[c_id] = indices
                     if normalize_label > 0:
-                        normalize(self.train_relevance_labels, indices, None)
+                        normalize(self.train_relevance_labels, indices, normalize_label, None)
 
             if self.vali_features is not None:
                 for c_id in self.vali_unique_query_ids:
                     indices = np.where(self.vali_query_ids == c_id)[0]
                     self.vali_sample_dict[c_id] = indices
                     if normalize_label > 0:
-                        normalize(self.vali_relevance_labels, indices, None)
+                        normalize(self.vali_relevance_labels, indices, normalize_label, None)
 
             if self.test_features is not None:
                 for c_id in self.test_unique_query_ids:
                     indices = np.where(self.test_query_ids == c_id)[0]
                     if normalize_label > 0:
-                        normalize(self.test_relevance_labels, indices, None)
+                        normalize(self.test_relevance_labels, indices, normalize_label, None)
 
             print("Trainable variables are:")
             for v in tf.trainable_variables():
@@ -384,6 +390,13 @@ if __name__ == '__main__':
     parser.add_argument('--rnn_type', type=int, default=0)
     parser.add_argument('--optimizer_type', type=int, default=0)
     parser.add_argument('--lambda_type', type=int, default=0)
+    parser.add_argument('--lr_decay_steps', type=int, default=700)
+    parser.add_argument('--lr_decay_rate', type=float, default=1.0)
+    parser.add_argument('--keep_prob', type=float, default=1.0)
+    parser.add_argument('--keep_prob_input', type=float, default=1.0)
+    parser.add_argument('--init_std_dev', type=float, default=1e-3)
+    parser.add_argument('--loss_type', type=int, default=0)
+
     args = parser.parse_args()
 
 
@@ -397,10 +410,13 @@ if __name__ == '__main__':
 
     if args.lambdarank:
       network_desc = 'lambdarank'
-    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s, normalize_label:%s, trim_tail_loss:%s, max_allowed_drop:%g, lambda_type:%g ' %
-            (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label, args.trim_tail_loss, args.max_allowed_drop, arg.lambda_type))
+
+    print('Training a %s network, learning rate %f, n_hidden %s, n_layers %s, ndcg_top %s, normalize_label:%s, trim_tail_loss:%s, max_allowed_drop:%g, lr_decay_steps:%d, lr_decay_rate:%g, keep_prob:%g, keep_prob_input:%g, init_std_dev:%g, loss_type:%d, lambda_type:%g' %
+            (network_desc, learning_rate, args.n_hidden, args.n_layers, args.ndcg_top, args.normalize_label, args.trim_tail_loss, args.max_allowed_drop, args.lr_decay_steps, args.lr_decay_rate, args.keep_prob, args.keep_prob_input, args.init_std_dev, args.loss_type, arg.lambda_type))
 
     trainer = RankNetTrainer(args.n_hidden, train_relevance_labels, train_query_ids, train_features, test_relevance_labels,
                              test_query_ids, test_features, vali_relevance_labels, vali_query_ids, vali_features, args.model_dir, args.ndcg_top,
                              args.beta1, args.beta2, args.epsilon, args.step_cnt, args.max_allowed_drop)
-    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss, args.rnn_type, args.enable_rnn, args.optimizer_type, arg.lambda_type)
+
+    trainer.train(learning_rate, args.n_layers,  args.lambdarank, args.n_features, args.epoch, enable_bn, args.L2, args.normalize_label, args.trim_tail_loss,
+            args.rnn_type, args.enable_rnn, args.optimizer_type, args.lr_decay_steps, args.lr_decay_rate, args.keep_prob, args.keep_prob_input, args.init_std_dev, args.loss_type, arg.lambda_type)

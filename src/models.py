@@ -40,36 +40,38 @@ def square_mask_tail_area(square, count):
 
     return tf.cond(length <= count, lambda: square, lambda: _square_mask_tail_area(square, count))
 
-def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, L2, ndcg_top, lambdarank, opt):
+def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate,
+        n_hidden, n_layers, n_features, enable_bn, L2, ndcg_top, lambdarank, opt, global_step, keep_prob, keep_prob_input, init_std_dev, loss_type):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
     n_data = tf.shape(x)[0]
 
     def build_vars():
-        variables = [tf.Variable(tf.random_normal([N_FEATURES, n_hidden], stddev=0.01)),
+        variables = [tf.Variable(tf.random_normal([N_FEATURES, n_hidden], stddev=init_std_dev)),
             tf.Variable(tf.zeros([n_hidden]))]
         if n_layers > 1:
             for i in range(n_layers-1):
-                variables.append(tf.Variable(tf.random_normal([n_hidden, n_hidden], stddev=0.01)))
+                variables.append(tf.Variable(tf.random_normal([n_hidden, n_hidden], stddev=init_std_dev)))
                 variables.append(tf.Variable(tf.zeros([n_hidden])))
-        variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=0.01)))
+        variables.append(tf.Variable(tf.random_normal([n_hidden, 1], stddev=init_std_dev)))
         variables.append(tf.Variable(0, dtype=tf.float32))
-        print('Building an default lambdaRank neural network. learning_rate:%g, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%g, trim_threshold:%d, use_lambda:%s'
-                % (learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2, ndcg_top, str(lambdarank)) )
+        print('Building an default lambdaRank neural network. learning_rate:%g, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%g, trim_threshold:%d, use_lambda:%s, init_std_dev:%g, loss_type:%d'
+                % (learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2, ndcg_top, str(lambdarank), init_std_dev, loss_type) )
         print(variables)
         return variables
 
     def score(x, *params):
+        x = tf.nn.dropout(x, keep_prob_input)
         z = tf.matmul(x, params[0]) + params[1]
         if enable_bn:
             z = tf.contrib.layers.batch_norm(z, decay=0.999, center=True, scale=True)
         if n_layers > 1:
             for i in range(0,n_layers-1):
-                z = tf.matmul(tf.nn.relu(z), params[2*(i+1)]) + params[2*(i+1)+1]
+                z = tf.matmul(tf.nn.dropout(tf.nn.relu(z), keep_prob), params[2*(i+1)]) + params[2*(i+1)+1]
                 if enable_bn:
                     z = tf.contrib.layers.batch_norm(z, decay=0.999, center=True, scale=True)
-        return tf.matmul(tf.nn.relu(z), params[-2]) + params[-1]
+        return tf.matmul(tf.nn.dropout(tf.nn.relu(z), keep_prob), params[-2]) + params[-1]
 
     params = build_vars()
     predicted_scores = score(x, *params)
@@ -99,13 +101,15 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
 
     if ndcg_top>0:
         swapped_ndcg = square_mask_tail_area(swapped_ndcg, ndcg_top)
-    cost = tf.reduce_mean(
-        (swapped_ndcg) * tf.nn.sigmoid_cross_entropy_with_logits(
-            logits=pairwise_predicted_scores, labels=real_scores))
+    if loss_type == 1:
+      loss_tensor = tf.losses.hinge_loss(logits=pairwise_predicted_scores, labels=real_scores, reduction=tf.losses.Reduction.NONE)
+    else:
+      loss_tensor = tf.nn.sigmoid_cross_entropy_with_logits(logits=pairwise_predicted_scores, labels=real_scores)
+    cost = tf.reduce_mean(swapped_ndcg * loss_tensor)
     cost = cost + L2_loss(L2)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
-        optimizer = opt.minimize(cost)
+        optimizer = opt.minimize(cost, global_step=global_step)
 
     def get_score(sess, feed_dict):
         return sess.run(predicted_scores, feed_dict=feed_dict)
@@ -115,7 +119,8 @@ def default_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range
 
     return cost, run_optimizer, get_score
 
-def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features, enable_bn, step_cnt, L2, ndcg_top, lambdarank, rnn_type, opt):
+def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, learning_rate, n_hidden, n_layers, n_features,
+        enable_bn, step_cnt, L2, ndcg_top, lambdarank, rnn_type, opt, global_step, keep_prob, keep_prob_input, init_std_dev, loss_type):
     N_FEATURES = n_features
     n_out = 1
     sigma = 1
@@ -128,23 +133,23 @@ def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, le
 
     def build_vars():
 
-        print('Building an rnn %s neural network. learning_rate:%g, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%g, step_cnt:%d, trim_threshold:%d, rnn_type:%d'
-                % (name, learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2, step_cnt, ndcg_top, rnn_type) )
+        print('Building an rnn %s neural network. learning_rate:%g, n_hidden:%d, n_layers:%d, n_features:%d, enable_bn:%s, L2:%g, step_cnt:%d, trim_threshold:%d, rnn_type:%d, init_std_dev:%g, loss_type:%d'
+                % (name, learning_rate, n_hidden, n_layers, n_features, str(enable_bn), L2, step_cnt, ndcg_top, rnn_type, init_std_dev, loss_type) )
         return None
 
     def score(x):
-      with tf.variable_scope("rnn", initializer=tf.random_normal_initializer(mean=0.0, stddev=0.01)):
+      with tf.variable_scope("rnn", initializer=tf.random_normal_initializer(mean=0.0, stddev=init_std_dev)):
         #seed_time = int(time.time())
         #init_func = tf.contrib.layers.xavier_initializer(uniform=True, seed=seed_time, dtype=tf.float32)
+        x = tf.nn.dropout(x, keep_prob_input)
 
         features = tf.reshape(x, [-1, step_cnt, n_features])
-
         b = tf.get_variable("bias", [1])
         W = tf.get_variable("weights", [n_hidden, 1])
 
         rnn_cell = None
         if rnn_type == 0:
-            rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LayerNormBasicLSTMCell(n_hidden, dropout_keep_prob=1.0, layer_norm=enable_bn, activation=tf.nn.relu)  for i in range(n_layers)], state_is_tuple=True)
+            rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LayerNormBasicLSTMCell(n_hidden, dropout_keep_prob=keep_prob, layer_norm=enable_bn, activation=tf.nn.relu)  for i in range(n_layers)], state_is_tuple=True)
         else:
             rnn_cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.BasicRNNCell(n_hidden, activation=tf.nn.relu)  for i in range(n_layers)], state_is_tuple=True)
 
@@ -187,13 +192,15 @@ def rnn_lambdarank(x, relevance_labels, sorted_relevance_labels, index_range, le
     if ndcg_top>0:
         swapped_ndcg = square_mask_tail_area(swapped_ndcg, ndcg_top)
 
-    cost = tf.reduce_mean(
-        (swapped_ndcg) * tf.nn.sigmoid_cross_entropy_with_logits(
-            logits=pairwise_predicted_scores, labels=real_scores))
+    if loss_type == 1:
+      loss_tensor = tf.losses.hinge_loss(logits=pairwise_predicted_scores, labels=real_scores, reduction=tf.losses.Reduction.NONE)
+    else:
+      loss_tensor = tf.nn.sigmoid_cross_entropy_with_logits(logits=pairwise_predicted_scores, labels=real_scores)
+    cost = tf.reduce_mean(swapped_ndcg * loss_tensor)
     cost = cost + L2_loss(L2)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
-        optimizer = opt.minimize(cost)
+        optimizer = opt.minimize(cost, global_step=global_step)
 
     def get_score(sess, feed_dict):
         return sess.run(predicted_scores, feed_dict=feed_dict)
