@@ -176,7 +176,7 @@ class RankNetTrainer:
                         if lambda_type == 0:
                             index_range_arr = np.array([float(i) for i in range(0,len(curr_train_labels))], ndmin=2).T
                         else:
-                            index_range_arr = np.array([float(0) for i in range(0,len(curr_train_labels))], ndmin=2).T
+                            index_range_arr = np.array([float(i) for i in range(0,len(curr_train_labels))], ndmin=2).T
                         optimizer(sess, {
                             x: np.array(curr_train_features, ndmin=2),
                             relevance_scores: np.array(curr_train_labels, ndmin=2).T,
